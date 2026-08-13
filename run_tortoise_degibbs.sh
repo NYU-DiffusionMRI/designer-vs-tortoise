@@ -54,6 +54,7 @@ echo "Output: output/tortoise_degibbs/dwi_degibbs.*"
 echo
 
 docker run --rm \
+    --platform linux/amd64 \
     -v "${SCRIPT_DIR}:/data" \
     "${TORTOISE_IMAGE}" \
     TORTOISEProcess \

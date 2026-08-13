@@ -23,7 +23,7 @@
 # output/designer_denoise/params/), containing tmi's DTI + DKI maps.
 #
 # Flags used:
-#   -DTI -DKI     tensor fitting only -- no -WDKI, no -SMI (per user's
+#   -DKI -WDKI     tensor fitting only -- no -SMI, no -DTI (per user's
 #                 request: SMI excluded entirely).
 #   -mask         output/brain_mask/brain_mask.nii.gz (from
 #                 extract_brain_mask.sh).
@@ -104,16 +104,19 @@ echo "== run_tmi.sh =="
 echo "Image:  ${DESIGNER_IMAGE}"
 echo "Input:  ${INPUT_REL}"
 echo "Mask:   ${MASK_REL}"
-echo "Fit:    -DTI -DKI (no -WDKI, no -SMI, no -sigma)"
+echo "Fit:    -DKI -WDKI (no -SMI, no -DTI, no -sigma)"
 echo "Output: ${OUTPUT_REL}/"
 echo
 
 docker run --rm \
+    --platform linux/amd64 \
     -v "${SCRIPT_DIR}:/data" \
     -w /data \
     "${DESIGNER_IMAGE}" \
     tmi \
-        -DTI -DKI \
+        -DKI -WDKI \
+        -fit_constraints 1,1,1 \
+        -akc_outliers \
         -mask "/data/${MASK_REL}" \
         -fslbval "/data/${BVAL_REL}" \
         -fslbvec "/data/${BVEC_REL}" \

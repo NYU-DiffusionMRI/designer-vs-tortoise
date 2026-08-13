@@ -70,6 +70,7 @@ echo "Output: output/designer_degibbs/dwi_degibbs.nii"
 echo
 
 docker run --rm \
+    --platform linux/amd64 \
     -v "${SCRIPT_DIR}:/data" \
     -w /data \
     "${DESIGNER_IMAGE}" \

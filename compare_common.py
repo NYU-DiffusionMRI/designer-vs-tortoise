@@ -41,6 +41,17 @@ def load_and_validate(path1: Path, path2: Path):
     return nii1, nii2, data1, data2
 
 
+def load_spatial_reference(path: Path, expected_shape: tuple) -> np.ndarray:
+    """Load a 3D NIfTI (e.g. mean-b0 or brain mask) and check it matches expected_shape."""
+    nii = nib.load(path)
+    if nii.shape != expected_shape:
+        raise ValueError(
+            f"Shape mismatch: {path.name} has shape {nii.shape}, expected {expected_shape}. "
+            "This script does not resample."
+        )
+    return np.asarray(nii.get_fdata(), dtype=np.float64)
+
+
 def build_mask(data1: np.ndarray, data2: np.ndarray) -> np.ndarray:
     """Boolean mask excluding voxels where both images are zero, and any
     voxel where either image is NaN/Inf."""

@@ -49,6 +49,7 @@ echo "Output: output/tortoise_denoise/dwi_denoised.*"
 echo
 
 docker run --rm \
+    --platform linux/amd64 \
     -v "${SCRIPT_DIR}:/data" \
     "${TORTOISE_IMAGE}" \
     TORTOISEProcess \

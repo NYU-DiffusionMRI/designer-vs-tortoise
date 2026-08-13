@@ -70,11 +70,13 @@ echo "Output: output/designer_denoise/dwi_denoised.nii"
 echo
 
 docker run --rm \
+    --platform linux/amd64 \
     -v "${SCRIPT_DIR}:/data" \
     -w /data \
     "${DESIGNER_IMAGE}" \
     designer \
         -denoise \
+        -algorithm veraart \
         -scratch /data/output/designer_denoise/scratch \
         -nocleanup \
         "/data/${B1_REL},/data/${B2_REL}" \

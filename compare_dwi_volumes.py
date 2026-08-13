@@ -45,7 +45,7 @@ import nibabel as nib
 import numpy as np
 import pandas as pd
 
-from compare_common import compute_metrics, load_and_validate, print_summary, slugify
+from compare_common import compute_metrics, load_and_validate, load_spatial_reference, print_summary, slugify
 
 
 def parse_args():
@@ -101,17 +101,6 @@ def parse_args():
     )
     parser.add_argument("--bins", type=int, default=100, help="Number of histogram bins (default: 100)")
     return parser.parse_args()
-
-
-def load_spatial_reference(path: Path, expected_shape: tuple) -> np.ndarray:
-    """Load a 3D NIfTI (mean-b0 or mask) and check it matches the DWI's spatial shape."""
-    nii = nib.load(path)
-    if nii.shape != expected_shape:
-        raise ValueError(
-            f"Shape mismatch: {path.name} has shape {nii.shape}, expected {expected_shape}. "
-            "This script does not resample."
-        )
-    return np.asarray(nii.get_fdata(), dtype=np.float64)
 
 
 def main():
