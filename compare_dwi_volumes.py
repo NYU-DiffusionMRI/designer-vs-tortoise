@@ -157,6 +157,9 @@ def main():
         abs_diff = np.abs(vol1[vol_mask] - vol2[vol_mask])
         ax.hist(abs_diff, bins=args.bins, range=(0, 0.1), color="steelblue", edgecolor="none")
         ax.axvline(abs_diff.mean(), color="firebrick", linestyle="--", label=f"mean = {abs_diff.mean():.4g}")
+        ax.axvline(
+            np.median(abs_diff), color="darkorange", linestyle="--", label=f"median = {np.median(abs_diff):.4g}"
+        )
         ax.set_xlim(0, 0.1)
         ax.set_xlabel("|normalized DESIGNER - normalized TORTOISE|")
         ax.set_ylabel("Voxel count")
