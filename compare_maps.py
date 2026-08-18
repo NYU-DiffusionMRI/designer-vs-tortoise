@@ -17,23 +17,46 @@ Usage:
 --mask defaults to the common BET brain mask produced by extract_brain_mask.sh
 (output/brain_mask/brain_mask.nii.gz).
 
---fa-range / --md-range / --mw-range set the x-axis / histogram range for
-each map's panel in the combined distribution plot (defaults: FA 0-0.1,
-MD 0-0.2, MW 0-0.5).
+Two diffs are computed per map, designer treated as ground truth:
+    absolute difference: |designer - tortoise|
+    relative difference:  |designer - tortoise| / designer * 100   (percent)
+
+Relative difference is undefined (and numerically unstable) where designer
+is at or near zero; voxels with abs(designer) <= --rel-eps are excluded from
+the relative-diff histogram/metrics and written as NaN in
+relative_diff_<MAP>.nii.gz. This matters most for MW (mean kurtosis): the
+whole-brain mask is not tissue-segmented, so CSF/ventricle/edge voxels where
+designer's kurtosis is essentially float noise around zero can otherwise
+turn a tiny absolute difference into a relative diff of many orders of
+magnitude, blowing up the mean while leaving the median untouched.
+
+--abs-range sets the x-axis / histogram range shared by all three
+*absolute*-difference panels (default: 0-0.1). --rel-range sets the x-axis /
+histogram range shared by all three *relative*-difference panels (default:
+0-100, since it's a percentage). --rel-eps sets the near-zero-designer
+exclusion threshold for the relative-diff calc (default: 1e-6). All three
+are shared across FA/MD/MW rather than per-map.
 
 Each run writes into its own timestamped subfolder of --output-dir (so repeat
 runs never clobber each other):
     <output-dir>/<timestamp>[_<slugified-label>]/summary_metrics.csv
     <output-dir>/<timestamp>[_<slugified-label>]/abs_diff_<MAP>.nii.gz
+    <output-dir>/<timestamp>[_<slugified-label>]/relative_diff_<MAP>.nii.gz
     <output-dir>/<timestamp>[_<slugified-label>]/map_diff_distribution.png
 
 summary_metrics.csv has one row per map (FA, MD, MW): label, timestamp, map,
 designer_img, tortoise_img, then MAD, RMSE, max abs diff, Pearson r, and
-per-image mean/std/median -- all computed within the brain mask.
+per-image mean/std/median for the absolute diff (all computed within the
+brain mask), plus mean/median/max and voxel count for the relative diff
+(computed within the brain mask, excluding voxels where designer == 0).
 abs_diff_<MAP>.nii.gz: voxel-wise |designer - tortoise| for that map (full
 volume, not restricted to the mask).
-map_diff_distribution.png: 1x3 grid, one histogram of masked abs(diff) per
-map, each with its own x-axis range.
+relative_diff_<MAP>.nii.gz: voxel-wise |designer - tortoise| / designer * 100
+for that map (full volume, not restricted to the mask; NaN where
+abs(designer) <= --rel-eps).
+map_diff_distribution.png: 2x3 grid -- rows absolute diff and relative diff,
+columns FA/MD/MW -- each histogram computed over the masked voxels (relative
+diff additionally excludes designer == 0 voxels), with its own x-axis range.
 """
 
 import argparse
@@ -62,11 +85,9 @@ MAP_FILENAMES = {
     "MW": "mk_wdki.nii",
 }
 
-DEFAULT_RANGES = {
-    "FA": (0.0, 0.1),
-    "MD": (0.0, 0.2),
-    "MW": (0.0, 0.5),
-}
+DEFAULT_ABS_RANGE = (0.0, 0.1)
+DEFAULT_REL_RANGE = (0.0, 100.0)
+DEFAULT_REL_EPS = 1e-6
 
 
 def parse_args():
@@ -82,28 +103,29 @@ def parse_args():
         help="Common BET brain mask NIfTI (default: output/brain_mask/brain_mask.nii.gz)",
     )
     parser.add_argument(
-        "--fa-range",
+        "--abs-range",
         type=float,
         nargs=2,
-        default=DEFAULT_RANGES["FA"],
+        default=DEFAULT_ABS_RANGE,
         metavar=("MIN", "MAX"),
-        help="Histogram/x-axis range for the FA diff panel (default: 0.0 0.1)",
+        help="Histogram/x-axis range shared by all three absolute-diff (FA/MD/MW) panels (default: 0.0 0.1)",
     )
     parser.add_argument(
-        "--md-range",
+        "--rel-range",
         type=float,
         nargs=2,
-        default=DEFAULT_RANGES["MD"],
+        default=DEFAULT_REL_RANGE,
         metavar=("MIN", "MAX"),
-        help="Histogram/x-axis range for the MD diff panel (default: 0.0 0.2)",
+        help="Histogram/x-axis range for all three relative-diff (%%) panels (default: 0.0 100.0)",
     )
     parser.add_argument(
-        "--mw-range",
+        "--rel-eps",
         type=float,
-        nargs=2,
-        default=DEFAULT_RANGES["MW"],
-        metavar=("MIN", "MAX"),
-        help="Histogram/x-axis range for the MW (mk_wdki) diff panel (default: 0.0 0.5)",
+        default=DEFAULT_REL_EPS,
+        metavar="EPS",
+        help="Exclude voxels with abs(designer) <= EPS from the relative-diff calc, since a "
+        "near-zero designer denominator blows up |diff|/designer*100 regardless of how small "
+        "the absolute difference is (default: 1e-6)",
     )
     parser.add_argument("--bins", type=int, default=100, help="Number of histogram bins (default: 100)")
     parser.add_argument(
@@ -132,7 +154,8 @@ def resolve_map_path(params_dir: Path, filename: str) -> Path:
 def main():
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    map_ranges = {"FA": tuple(args.fa_range), "MD": tuple(args.md_range), "MW": tuple(args.mw_range)}
+    abs_range = tuple(args.abs_range)
+    rel_range = tuple(args.rel_range)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir_name = timestamp if not args.label else f"{timestamp}_{slugify(args.label)}"
@@ -142,8 +165,10 @@ def main():
 
     brain_mask = None
     rows = []
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-    for (map_name, filename), ax in zip(MAP_FILENAMES.items(), axes):
+    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+    for col_idx, (map_name, filename) in enumerate(MAP_FILENAMES.items()):
+        ax_abs, ax_rel = axes[0, col_idx], axes[1, col_idx]
+
         designer_img = resolve_map_path(args.designer_params_dir, filename)
         tortoise_img = resolve_map_path(args.tortoise_params_dir, filename)
 
@@ -151,8 +176,21 @@ def main():
         if brain_mask is None:
             brain_mask = load_spatial_reference(args.mask, data1.shape) > 0
         mask = build_mask(data1, data2) & brain_mask
+        # designer (data1) is treated as ground truth in the denominator; relative
+        # diff is undefined (and numerically unstable) where designer is at or near
+        # zero, so exclude those voxels here.
+        rel_mask = mask & (np.abs(data1) > args.rel_eps)
 
         metrics = compute_metrics(data1, data2, mask, label=map_name)
+        rel_vals = np.abs(data1 - data2)[rel_mask] / data1[rel_mask] * 100
+        metrics.update(
+            {
+                "rel_diff_n_voxels": int(rel_mask.sum()),
+                "rel_diff_mean_pct": rel_vals.mean() if rel_vals.size else float("nan"),
+                "rel_diff_median_pct": np.median(rel_vals) if rel_vals.size else float("nan"),
+                "rel_diff_max_pct": rel_vals.max() if rel_vals.size else float("nan"),
+            }
+        )
         metrics = {
             "label": args.label,
             "timestamp": timestamp,
@@ -164,23 +202,43 @@ def main():
         print_summary(metrics)
         rows.append(metrics)
 
-        diff_img = nib.Nifti1Image(np.abs(data1 - data2), nii1.affine, nii1.header)
-        diff_path = run_dir / f"abs_diff_{map_name}.nii.gz"
-        nib.save(diff_img, diff_path)
-        print(f"Wrote {diff_path}")
+        abs_diff_full = np.abs(data1 - data2)
+        abs_diff_path = run_dir / f"abs_diff_{map_name}.nii.gz"
+        nib.save(nib.Nifti1Image(abs_diff_full, nii1.affine, nii1.header), abs_diff_path)
+        print(f"Wrote {abs_diff_path}")
 
-        abs_diff = np.abs(data1 - data2)[mask]
-        map_range = map_ranges[map_name]
-        ax.hist(abs_diff, bins=args.bins, range=map_range, color="steelblue", edgecolor="none")
-        ax.axvline(abs_diff.mean(), color="firebrick", linestyle="--", label=f"mean = {abs_diff.mean():.4g}")
-        ax.axvline(
+        rel_diff_full = np.full(data1.shape, np.nan, dtype=np.float64)
+        denom_ok = np.abs(data1) > args.rel_eps
+        rel_diff_full[denom_ok] = (
+            np.abs(data1[denom_ok] - data2[denom_ok]) / data1[denom_ok] * 100
+        )
+        rel_diff_path = run_dir / f"relative_diff_{map_name}.nii.gz"
+        nib.save(nib.Nifti1Image(rel_diff_full, nii1.affine, nii1.header), rel_diff_path)
+        print(f"Wrote {rel_diff_path}")
+
+        abs_diff = abs_diff_full[mask]
+        ax_abs.hist(abs_diff, bins=args.bins, range=abs_range, color="steelblue", edgecolor="none")
+        ax_abs.axvline(abs_diff.mean(), color="firebrick", linestyle="--", label=f"mean = {abs_diff.mean():.4g}")
+        ax_abs.axvline(
             np.median(abs_diff), color="darkorange", linestyle="--", label=f"median = {np.median(abs_diff):.4g}"
         )
-        ax.set_xlim(map_range)
-        ax.set_xlabel("|designer - tortoise|")
-        ax.set_ylabel("Voxel count")
-        ax.set_title(map_name)
-        ax.legend()
+        ax_abs.set_xlim(abs_range)
+        ax_abs.set_xlabel("|designer - tortoise|")
+        ax_abs.set_ylabel("Voxel count")
+        ax_abs.set_title(f"{map_name}: absolute difference")
+        ax_abs.legend()
+
+        ax_rel.hist(rel_vals, bins=args.bins, range=rel_range, color="seagreen", edgecolor="none")
+        if rel_vals.size:
+            ax_rel.axvline(rel_vals.mean(), color="firebrick", linestyle="--", label=f"mean = {rel_vals.mean():.4g}")
+            ax_rel.axvline(
+                np.median(rel_vals), color="darkorange", linestyle="--", label=f"median = {np.median(rel_vals):.4g}"
+            )
+        ax_rel.set_xlim(rel_range)
+        ax_rel.set_xlabel("|designer - tortoise| / designer * 100 (%)")
+        ax_rel.set_ylabel("Voxel count")
+        ax_rel.set_title(f"{map_name}: relative difference")
+        ax_rel.legend()
 
     fig.suptitle(args.label or "DESIGNER vs TORTOISE - map diffs")
     fig.tight_layout()
