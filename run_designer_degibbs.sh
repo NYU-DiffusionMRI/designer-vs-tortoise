@@ -25,13 +25,44 @@
 #
 # Docker image (pinned, per user's requirement -- do not change without
 # being asked): nyudiffusionmri/designer2:v2.0.16
+#
+# End-to-end: after producing (or finding an existing) dwi_degibbs.nii, this
+# script chains into run_tmi.sh to fit DTI/DKI parameter maps -- so a single
+# invocation goes from raw input through preprocessing to parametric maps.
+#
+# Usage
+# -----
+#   ./run_designer_degibbs.sh [output_dir]
+#
+# output_dir defaults to output/designer_degibbs (relative to the repo root).
+# If output_dir already contains dwi_degibbs.nii (i.e. DESIGNER has already
+# been run there), the DESIGNER/docker step is skipped and this script goes
+# straight to run_tmi.sh.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INPUT_DIR="${SCRIPT_DIR}/input"
-OUT_DIR="${SCRIPT_DIR}/output/designer_degibbs"
 DESIGNER_IMAGE="nyudiffusionmri/designer2:v2.0.16"
+
+# --- Resolve output directory (arg 1, default output/designer_degibbs) -----
+OUT_DIR_ARG="${1:-output/designer_degibbs}"
+case "${OUT_DIR_ARG}" in
+    /*) OUT_DIR="${OUT_DIR_ARG}" ;;
+    *)  OUT_DIR="${SCRIPT_DIR}/${OUT_DIR_ARG}" ;;
+esac
+
+case "${OUT_DIR}" in
+    "${SCRIPT_DIR}"/*) ;;
+    *)
+        echo "ERROR: output dir ${OUT_DIR} is outside the repo (${SCRIPT_DIR})." >&2
+        echo "       Docker only mounts the repo root, so the output dir must live inside it." >&2
+        exit 1
+        ;;
+esac
+
+OUT_REL="${OUT_DIR#"${SCRIPT_DIR}"/}"
+FINAL_NII="${OUT_DIR}/dwi_degibbs.nii"
 
 find_one() {
     local pattern="$1"
@@ -51,34 +82,43 @@ find_one() {
     printf '%s\n' "${matches[0]}"
 }
 
-B1_NII="$(find_one '*_b1_*_28.nii')"
-B2_NII="$(find_one '*_b2_*_30.nii')"
+if [[ -f "${FINAL_NII}" ]]; then
+    echo "== run_designer_degibbs.sh =="
+    echo "Output: ${OUT_REL}/dwi_degibbs.nii already exists -- skipping DESIGNER, running tmi only."
+    echo
+else
+    B1_NII="$(find_one '*_b1_*_28.nii')"
+    B2_NII="$(find_one '*_b2_*_30.nii')"
 
-B1_REL="input/$(basename "${B1_NII}")"
-B2_REL="input/$(basename "${B2_NII}")"
+    B1_REL="input/$(basename "${B1_NII}")"
+    B2_REL="input/$(basename "${B2_NII}")"
 
-PF="0.75"
-PE_DIR="j-"
+    PF="0.75"
+    PE_DIR="j-"
 
-mkdir -p "${OUT_DIR}/scratch"
+    mkdir -p "${OUT_DIR}/scratch"
 
-echo "== run_designer_degibbs.sh =="
-echo "Image:  ${DESIGNER_IMAGE}"
-echo "Inputs: ${B1_REL} , ${B2_REL}  (native DESIGNER comma-list, not concatenated)"
-echo "Step:   -degibbs only (RPG), -pf ${PF} -pe_dir ${PE_DIR}"
-echo "Output: output/designer_degibbs/dwi_degibbs.nii"
-echo
+    echo "== run_designer_degibbs.sh =="
+    echo "Image:  ${DESIGNER_IMAGE}"
+    echo "Inputs: ${B1_REL} , ${B2_REL}  (native DESIGNER comma-list, not concatenated)"
+    echo "Step:   -degibbs only (RPG), -pf ${PF} -pe_dir ${PE_DIR}"
+    echo "Output: ${OUT_REL}/dwi_degibbs.nii"
+    echo
 
-docker run --rm \
-    --platform linux/amd64 \
-    -v "${SCRIPT_DIR}:/data" \
-    -w /data \
-    "${DESIGNER_IMAGE}" \
-    designer \
-        -degibbs \
-        -pf "${PF}" \
-        -pe_dir "${PE_DIR}" \
-        -scratch /data/output/designer_degibbs/scratch \
-        -nocleanup \
-        "/data/${B1_REL},/data/${B2_REL}" \
-        /data/output/designer_degibbs/dwi_degibbs.nii
+    docker run --rm \
+        --platform linux/amd64 \
+        -v "${SCRIPT_DIR}:/data" \
+        -w /data \
+        "${DESIGNER_IMAGE}" \
+        designer \
+            -degibbs \
+            -pf "${PF}" \
+            -pe_dir "${PE_DIR}" \
+            -scratch "/data/${OUT_REL}/scratch" \
+            -nocleanup \
+            "/data/${B1_REL},/data/${B2_REL}" \
+            "/data/${OUT_REL}/dwi_degibbs.nii"
+fi
+
+echo "== run_designer_degibbs.sh: running tmi =="
+"${SCRIPT_DIR}/run_tmi.sh" "${FINAL_NII}"

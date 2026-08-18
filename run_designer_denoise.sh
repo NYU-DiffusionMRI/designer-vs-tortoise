@@ -27,13 +27,44 @@
 #
 # Docker image (pinned, per user's requirement -- do not change without
 # being asked): nyudiffusionmri/designer2:v2.0.16
+#
+# End-to-end: after producing (or finding an existing) dwi_denoised.nii, this
+# script chains into run_tmi.sh to fit DTI/DKI parameter maps -- so a single
+# invocation goes from raw input through preprocessing to parametric maps.
+#
+# Usage
+# -----
+#   ./run_designer_denoise.sh [output_dir]
+#
+# output_dir defaults to output/designer_denoise (relative to the repo root).
+# If output_dir already contains dwi_denoised.nii (i.e. DESIGNER has already
+# been run there), the DESIGNER/docker step is skipped and this script goes
+# straight to run_tmi.sh.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INPUT_DIR="${SCRIPT_DIR}/input"
-OUT_DIR="${SCRIPT_DIR}/output/designer_denoise"
 DESIGNER_IMAGE="nyudiffusionmri/designer2:v2.0.16"
+
+# --- Resolve output directory (arg 1, default output/designer_denoise) -----
+OUT_DIR_ARG="${1:-output/designer_denoise}"
+case "${OUT_DIR_ARG}" in
+    /*) OUT_DIR="${OUT_DIR_ARG}" ;;
+    *)  OUT_DIR="${SCRIPT_DIR}/${OUT_DIR_ARG}" ;;
+esac
+
+case "${OUT_DIR}" in
+    "${SCRIPT_DIR}"/*) ;;
+    *)
+        echo "ERROR: output dir ${OUT_DIR} is outside the repo (${SCRIPT_DIR})." >&2
+        echo "       Docker only mounts the repo root, so the output dir must live inside it." >&2
+        exit 1
+        ;;
+esac
+
+OUT_REL="${OUT_DIR#"${SCRIPT_DIR}"/}"
+FINAL_NII="${OUT_DIR}/dwi_denoised.nii"
 
 find_one() {
     local pattern="$1"
@@ -53,31 +84,40 @@ find_one() {
     printf '%s\n' "${matches[0]}"
 }
 
-B1_NII="$(find_one '*_b1_*_28.nii')"
-B2_NII="$(find_one '*_b2_*_30.nii')"
+if [[ -f "${FINAL_NII}" ]]; then
+    echo "== run_designer_denoise.sh =="
+    echo "Output: ${OUT_REL}/dwi_denoised.nii already exists -- skipping DESIGNER, running tmi only."
+    echo
+else
+    B1_NII="$(find_one '*_b1_*_28.nii')"
+    B2_NII="$(find_one '*_b2_*_30.nii')"
 
-# Paths as seen inside the container (repo root bind-mounted at /data).
-B1_REL="input/$(basename "${B1_NII}")"
-B2_REL="input/$(basename "${B2_NII}")"
+    # Paths as seen inside the container (repo root bind-mounted at /data).
+    B1_REL="input/$(basename "${B1_NII}")"
+    B2_REL="input/$(basename "${B2_NII}")"
 
-mkdir -p "${OUT_DIR}/scratch"
+    mkdir -p "${OUT_DIR}/scratch"
 
-echo "== run_designer_denoise.sh =="
-echo "Image:  ${DESIGNER_IMAGE}"
-echo "Inputs: ${B1_REL} , ${B2_REL}  (native DESIGNER comma-list, not concatenated)"
-echo "Step:   -denoise only (MP-PCA, default box patch)"
-echo "Output: output/designer_denoise/dwi_denoised.nii"
-echo
+    echo "== run_designer_denoise.sh =="
+    echo "Image:  ${DESIGNER_IMAGE}"
+    echo "Inputs: ${B1_REL} , ${B2_REL}  (native DESIGNER comma-list, not concatenated)"
+    echo "Step:   -denoise only (MP-PCA, default box patch)"
+    echo "Output: ${OUT_REL}/dwi_denoised.nii"
+    echo
 
-docker run --rm \
-    --platform linux/amd64 \
-    -v "${SCRIPT_DIR}:/data" \
-    -w /data \
-    "${DESIGNER_IMAGE}" \
-    designer \
-        -denoise \
-        -algorithm veraart \
-        -scratch /data/output/designer_denoise/scratch \
-        -nocleanup \
-        "/data/${B1_REL},/data/${B2_REL}" \
-        /data/output/designer_denoise/dwi_denoised.nii
+    # Optional: -algorithm veraart
+    docker run --rm \
+        --platform linux/amd64 \
+        -v "${SCRIPT_DIR}:/data" \
+        -w /data \
+        "${DESIGNER_IMAGE}" \
+        designer \
+            -denoise \
+            -scratch "/data/${OUT_REL}/scratch" \
+            -nocleanup \
+            "/data/${B1_REL},/data/${B2_REL}" \
+            "/data/${OUT_REL}/dwi_denoised.nii"
+fi
+
+echo "== run_designer_denoise.sh: running tmi =="
+"${SCRIPT_DIR}/run_tmi.sh" "${FINAL_NII}"
