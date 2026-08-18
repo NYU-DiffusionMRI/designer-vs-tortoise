@@ -2,9 +2,9 @@
 """
 compare_common.py
 
-Shared voxel-wise comparison helpers used by compare_dwi.py and
-compare_maps.py: load+validate a pair of NIfTI images, build a comparison
-mask, compute summary metrics, and pretty-print them.
+Shared voxel-wise comparison helpers used by compare_dwi.py, compare_maps.py,
+and compare_maps_roi.py: load+validate a pair of NIfTI images, build a
+comparison mask, compute summary metrics, and pretty-print them.
 """
 
 import re
@@ -14,10 +14,27 @@ import numpy as np
 from pathlib import Path
 from scipy.stats import pearsonr
 
+# FA/MD/MW map filenames within a designer+tmi or tortoise+tmi params/ dir
+# (see run_tmi.sh). FA/MD come from the DKI fit, MW (mean kurtosis) from the
+# weighted-DKI fit.
+MAP_FILENAMES = {
+    "FA": "fa_dki.nii",
+    "MD": "md_dki.nii",
+    "MW": "mk_wdki.nii",
+}
+
 
 def slugify(text: str) -> str:
     """Lowercase, non-alphanumeric runs -> '_', trimmed. Used for directory names."""
     return re.sub(r"[^a-zA-Z0-9]+", "_", text).strip("_").lower()
+
+
+def resolve_map_path(params_dir: Path, filename: str) -> Path:
+    """Look up a map file within a params/ dir, raising a clear error if missing."""
+    path = params_dir / filename
+    if not path.is_file():
+        raise FileNotFoundError(f"Expected map file not found: {path}")
+    return path
 
 
 def load_and_validate(path1: Path, path2: Path):

@@ -71,19 +71,15 @@ import numpy as np
 import pandas as pd
 
 from compare_common import (
+    MAP_FILENAMES,
     build_mask,
     compute_metrics,
     load_and_validate,
     load_spatial_reference,
     print_summary,
+    resolve_map_path,
     slugify,
 )
-
-MAP_FILENAMES = {
-    "FA": "fa_dki.nii",
-    "MD": "md_dki.nii",
-    "MW": "mk_wdki.nii",
-}
 
 DEFAULT_ABS_RANGE = (0.0, 0.1)
 DEFAULT_REL_RANGE = (0.0, 100.0)
@@ -142,13 +138,6 @@ def parse_args():
         "Included in the run directory name and the summary CSV.",
     )
     return parser.parse_args()
-
-
-def resolve_map_path(params_dir: Path, filename: str) -> Path:
-    path = params_dir / filename
-    if not path.is_file():
-        raise FileNotFoundError(f"Expected map file not found: {path}")
-    return path
 
 
 def main():
