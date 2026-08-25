@@ -29,6 +29,13 @@
 #
 # Docker image (pinned, per user's requirement -- do not change without
 # being asked): eurotomania/tortoise:latest
+#
+# End-to-end: after producing (or finding an existing) dwi_degibbs.nii, this
+# script chains into run_tmi.sh to fit DTI/DKI parameter maps -- so a single
+# invocation goes from raw input through preprocessing to parametric maps.
+# If output/tortoise_degibbs/dwi_degibbs.nii already exists (i.e. TORTOISE
+# has already been run), the TORTOISE/docker step is skipped and this script
+# goes straight to run_tmi.sh.
 
 set -euo pipefail
 
@@ -36,33 +43,43 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONCAT_DIR="${SCRIPT_DIR}/output/concat"
 CONCAT_NII="${CONCAT_DIR}/dwi_concat.nii"
 OUT_DIR="${SCRIPT_DIR}/output/tortoise_degibbs"
+FINAL_NII="${OUT_DIR}/dwi_degibbs.nii"
 TORTOISE_IMAGE="eurotomania/tortoise:latest"
 
-if [[ ! -f "${CONCAT_NII}" ]]; then
-    echo "ERROR: ${CONCAT_NII} not found." >&2
-    echo "       Run ./concatenate_inputs.sh first (dwicat-merges series 28+30)." >&2
-    exit 1
+if [[ -f "${FINAL_NII}" ]]; then
+    echo "== run_tortoise_degibbs.sh =="
+    echo "Output: output/tortoise_degibbs/dwi_degibbs.nii already exists -- skipping TORTOISE, running tmi only."
+    echo
+else
+    if [[ ! -f "${CONCAT_NII}" ]]; then
+        echo "ERROR: ${CONCAT_NII} not found." >&2
+        echo "       Run ./concatenate_inputs.sh first (dwicat-merges series 28+30)." >&2
+        exit 1
+    fi
+
+    mkdir -p "${OUT_DIR}"
+
+    echo "== run_tortoise_degibbs.sh =="
+    echo "Image:  ${TORTOISE_IMAGE}"
+    echo "Input:  output/concat/dwi_concat.nii  (dwicat-merged series 28+30)"
+    echo "Step:   --gibbs 1 only (denoising/motion/eddy/epi disabled)"
+    echo "Output: output/tortoise_degibbs/dwi_degibbs.*"
+    echo
+
+    docker run --rm \
+        --platform linux/amd64 \
+        -v "${SCRIPT_DIR}:/data" \
+        "${TORTOISE_IMAGE}" \
+        TORTOISEProcess \
+            --up_data /data/output/concat/dwi_concat.nii \
+            --denoising off \
+            --gibbs 1 \
+            -c off \
+            --epi off \
+            --s2v 0 \
+            --repol 0 \
+            --output /data/output/tortoise_degibbs/dwi_degibbs.nii
 fi
 
-mkdir -p "${OUT_DIR}"
-
-echo "== run_tortoise_degibbs.sh =="
-echo "Image:  ${TORTOISE_IMAGE}"
-echo "Input:  output/concat/dwi_concat.nii  (dwicat-merged series 28+30)"
-echo "Step:   --gibbs 1 only (denoising/motion/eddy/epi disabled)"
-echo "Output: output/tortoise_degibbs/dwi_degibbs.*"
-echo
-
-docker run --rm \
-    --platform linux/amd64 \
-    -v "${SCRIPT_DIR}:/data" \
-    "${TORTOISE_IMAGE}" \
-    TORTOISEProcess \
-        --up_data /data/output/concat/dwi_concat.nii \
-        --denoising off \
-        --gibbs 1 \
-        -c off \
-        --epi off \
-        --s2v 0 \
-        --repol 0 \
-        --output /data/output/tortoise_degibbs/dwi_degibbs.nii
+echo "== run_tortoise_degibbs.sh: running tmi =="
+"${SCRIPT_DIR}/run_tmi.sh" "${FINAL_NII}"
