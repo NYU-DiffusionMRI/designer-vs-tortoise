@@ -3,8 +3,8 @@ __pycache__/*
 
 
 
-input/*
-output/*
+input
+output
 results/*
 
 *.log
