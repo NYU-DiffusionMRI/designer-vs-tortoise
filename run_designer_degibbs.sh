@@ -81,7 +81,7 @@ find_one() {
     local matches=()
     while IFS= read -r -d '' f; do
         matches+=("$f")
-    done < <(find "${INPUT_DIR}" -maxdepth 1 -name "${pattern}" -print0)
+    done < <(find -L "${INPUT_DIR}" -maxdepth 1 -name "${pattern}" -print0)
 
     if [[ ${#matches[@]} -eq 0 ]]; then
         echo "ERROR: no file in ${INPUT_DIR} matching '${pattern}'" >&2
