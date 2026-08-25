@@ -45,6 +45,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INPUT_DIR="${SCRIPT_DIR}/input"
 DESIGNER_IMAGE="nyudiffusionmri/designer2:v2.0.16"
 
+# input/ and output/ may be symlinks to a network mount (e.g. CIFS). Docker's
+# bind mount below does not follow host symlinks out of SCRIPT_DIR, so the
+# container would see a dangling symlink. Mount each symlink's real target at
+# the same absolute path so it resolves correctly inside the container too.
+EXTRA_MOUNTS=()
+for _d in input output; do
+    if [[ -L "${SCRIPT_DIR}/${_d}" ]]; then
+        _target="$(readlink -f "${SCRIPT_DIR}/${_d}")"
+        EXTRA_MOUNTS+=(-v "${_target}:${_target}")
+    fi
+done
+
 # --- Resolve output directory (arg 1, default output/designer_degibbs) -----
 OUT_DIR_ARG="${1:-output/designer_degibbs}"
 case "${OUT_DIR_ARG}" in
@@ -108,6 +120,7 @@ else
     docker run --rm \
         --platform linux/amd64 \
         -v "${SCRIPT_DIR}:/data" \
+        "${EXTRA_MOUNTS[@]}" \
         -w /data \
         "${DESIGNER_IMAGE}" \
         designer \

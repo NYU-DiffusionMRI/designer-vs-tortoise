@@ -45,6 +45,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DESIGNER_IMAGE="nyudiffusionmri/designer2:v2.0.16"
 BRAIN_MASK="${SCRIPT_DIR}/output/brain_mask/brain_mask.nii.gz"
 
+# input/ and output/ may be symlinks to a network mount (e.g. CIFS). Docker's
+# bind mount below does not follow host symlinks out of SCRIPT_DIR, so the
+# container would see a dangling symlink. Mount each symlink's real target at
+# the same absolute path so it resolves correctly inside the container too.
+EXTRA_MOUNTS=()
+for _d in input output; do
+    if [[ -L "${SCRIPT_DIR}/${_d}" ]]; then
+        _target="$(readlink -f "${SCRIPT_DIR}/${_d}")"
+        EXTRA_MOUNTS+=(-v "${_target}:${_target}")
+    fi
+done
+
 if [[ $# -ne 1 ]]; then
     echo "Usage: $0 <path/to/dwi.nii>" >&2
     echo "  e.g. $0 output/designer_denoise/dwi_denoised.nii" >&2
@@ -111,6 +123,7 @@ echo
 docker run --rm \
     --platform linux/amd64 \
     -v "${SCRIPT_DIR}:/data" \
+    "${EXTRA_MOUNTS[@]}" \
     -w /data \
     "${DESIGNER_IMAGE}" \
     tmi \
