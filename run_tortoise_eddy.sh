@@ -46,9 +46,15 @@
 # End-to-end: after producing (or finding an existing) dwi_eddy.nii, this
 # script chains into run_tmi.sh to fit DTI/DKI parameter maps -- so a single
 # invocation goes from raw input through preprocessing to parametric maps.
-# If output/tortoise_eddy/dwi_eddy.nii already exists (i.e. TORTOISE has
-# already been run), the TORTOISE/docker step is skipped and this script
-# goes straight to run_tmi.sh.
+#
+# Usage
+# -----
+#   ./run_tortoise_eddy.sh [output_dir]
+#
+# output_dir defaults to output/tortoise_eddy (relative to the repo root).
+# If output_dir already contains dwi_eddy.nii (i.e. TORTOISE has already
+# been run there), the TORTOISE/docker step is skipped and this script goes
+# straight to run_tmi.sh.
 
 set -euo pipefail
 
@@ -68,13 +74,30 @@ done
 
 CONCAT_DIR="${SCRIPT_DIR}/output/concat"
 CONCAT_NII="${CONCAT_DIR}/dwi_concat.nii"
-OUT_DIR="${SCRIPT_DIR}/output/tortoise_eddy"
-FINAL_NII="${OUT_DIR}/dwi_eddy.nii"
 TORTOISE_IMAGE="eurotomania/tortoise:latest"
+
+# --- Resolve output directory (arg 1, default output/tortoise_eddy) --------
+OUT_DIR_ARG="${1:-output/tortoise_eddy}"
+case "${OUT_DIR_ARG}" in
+    /*) OUT_DIR="${OUT_DIR_ARG}" ;;
+    *)  OUT_DIR="${SCRIPT_DIR}/${OUT_DIR_ARG}" ;;
+esac
+
+case "${OUT_DIR}" in
+    "${SCRIPT_DIR}"/*) ;;
+    *)
+        echo "ERROR: output dir ${OUT_DIR} is outside the repo (${SCRIPT_DIR})." >&2
+        echo "       Docker only mounts the repo root, so the output dir must live inside it." >&2
+        exit 1
+        ;;
+esac
+
+OUT_REL="${OUT_DIR#"${SCRIPT_DIR}"/}"
+FINAL_NII="${OUT_DIR}/dwi_eddy.nii"
 
 if [[ -f "${FINAL_NII}" ]]; then
     echo "== run_tortoise_eddy.sh =="
-    echo "Output: output/tortoise_eddy/dwi_eddy.nii already exists -- skipping TORTOISE, running tmi only."
+    echo "Output: ${OUT_REL}/dwi_eddy.nii already exists -- skipping TORTOISE, running tmi only."
     echo
 else
     if [[ ! -f "${CONCAT_NII}" ]]; then
@@ -89,7 +112,7 @@ else
     echo "Image:  ${TORTOISE_IMAGE}"
     echo "Input:  output/concat/dwi_concat.nii  (dwicat-merged series 28+30)"
     echo "Step:   -c quadratic only (motion & eddy-currents; denoising/gibbs/epi disabled, no reverse-PE)"
-    echo "Output: output/tortoise_eddy/dwi_eddy.*"
+    echo "Output: ${OUT_REL}/dwi_eddy.*"
     echo
 
     docker run --rm \
@@ -106,7 +129,7 @@ else
             --epi off \
             --s2v 0 \
             --repol 0 \
-            --output /data/output/tortoise_eddy/dwi_eddy.nii
+            --output /data/${OUT_REL}/dwi_eddy.nii
 fi
 
 echo "== run_tortoise_eddy.sh: running tmi =="
