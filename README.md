@@ -6,9 +6,13 @@ Current comparison covers **only**:
 
 1. Denoising — DESIGNER v2: MP-PCA (box patch) · TORTOISE V4: denoising step only
 2. Gibbs ringing removal — DESIGNER v2: RPG · TORTOISE V4: Gibbs-removal step only
+3. Eddy-current + motion correction — DESIGNER v2: FSL eddy via `-eddy -rpe_none`
+   (no reverse phase-encoding data) · TORTOISE V4: `-c quadratic` (motion &
+   eddy-currents) with `--epi off`
 
-Eddy, topup, motion correction, gradient nonlinearity correction (GNC), and all
-other preprocessing are explicitly out of scope and disabled in every script below.
+Topup / EPI susceptibility distortion correction, gradient nonlinearity
+correction (GNC), and all other preprocessing are explicitly out of scope and
+disabled in every script below.
 
 ## Pinned Docker images
 
@@ -59,6 +63,8 @@ by the scripts in this repo.
 | `run_designer_degibbs.sh` | DESIGNER v2 | `-degibbs` only (RPG, `-pf 0.75 -pe_dir j-`) | `input/*_28.nii,input/*_30.nii` (native comma-list) |
 | `run_tortoise_denoise.sh` | TORTOISE V4 | `--denoising for_final` only | `output/concat/dwi_concat.nii` |
 | `run_tortoise_degibbs.sh` | TORTOISE V4 | `--gibbs 1` only | `output/concat/dwi_concat.nii` |
+| `run_designer_eddy.sh` | DESIGNER v2 | `-eddy -rpe_none -pe_dir j-` only (no reverse-PE) | `input/*_28.nii,input/*_30.nii` (native comma-list) |
+| `run_tortoise_eddy.sh` | TORTOISE V4 | `-c quadratic --epi off` only | `output/concat/dwi_concat.nii` |
 
 Run `concatenate_inputs.sh` before either `run_tortoise_*.sh` script — TORTOISE's
 `--up_data` accepts exactly one NIfTI file, unlike DESIGNER's native
@@ -73,6 +79,13 @@ TORTOISE only. See the header comment in each script for the full reasoning.
   the same input (not chained), so each algorithm is isolated for comparison.
 - Phase (`_ph`) series and the reverse-PE pair (`_38`/`_39_ph`) are excluded from
   this comparison entirely.
+- Reverse-PE data is intentionally not used for eddy-current + motion
+  correction either: eddy-current/motion correction and EPI/susceptibility
+  (topup) correction are independent steps in both tools — confirmed directly
+  against each pinned image's own `--help` output. DESIGNER's `-rpe_none`
+  performs "eddy current and motion correction only" with no reverse-PE
+  input; TORTOISE's `-c` (motion & eddy-currents) and `--epi` (susceptibility
+  correction) are separate flags with no dependency between them.
 
 None of these scripts have been executed — review the commands against your own
 DESIGNER/TORTOISE install before running them.
