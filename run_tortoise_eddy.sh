@@ -117,7 +117,6 @@ else
 
     docker run --rm \
         --platform linux/amd64 \
-        --gpus all \
         -v "${SCRIPT_DIR}:/data" \
         "${EXTRA_MOUNTS[@]}" \
         "${TORTOISE_IMAGE}" \
