@@ -41,7 +41,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from scipy.stats import pearsonr
 
 from compare_common import (
     MAP_FILENAMES,
@@ -54,6 +53,14 @@ from compare_common import (
 DEFAULT_FA_RANGE = (0.0, 1.0)
 DEFAULT_MD_RANGE = (0.0, 3.0)
 DEFAULT_MW_RANGE = (0.0, 2.0)
+
+
+def concordance_correlation_coefficient(x: np.ndarray, y: np.ndarray) -> float:
+    """Lin's CCC: agreement with the y=x line, not just linear correlation."""
+    mean_x, mean_y = x.mean(), y.mean()
+    var_x, var_y = x.var(), y.var()
+    covariance = np.mean((x - mean_x) * (y - mean_y))
+    return (2 * covariance) / (var_x + var_y + (mean_x - mean_y) ** 2)
 
 
 def parse_args():
@@ -162,7 +169,7 @@ def main():
             )
 
         xs, ys = np.array(xs), np.array(ys)
-        r, _ = pearsonr(xs, ys) if xs.size >= 2 else (float("nan"), None)
+        ccc = concordance_correlation_coefficient(xs, ys) if xs.size >= 2 else float("nan")
 
         lo, hi = plot_ranges[map_name]
         ax.scatter(xs, ys, color="steelblue", edgecolor="none")
@@ -171,7 +178,7 @@ def main():
         ax.set_ylim(lo, hi)
         ax.set_xlabel("DESIGNER ROI mean")
         ax.set_ylabel("TORTOISE ROI mean")
-        ax.set_title(f"{map_name} (n={xs.size} ROIs, r={r:.4f})")
+        ax.set_title(f"{map_name} (n={xs.size} ROIs, CCC={ccc:.4f})")
         ax.legend()
 
     fig.suptitle(args.label or "DESIGNER vs TORTOISE - ROI means")
