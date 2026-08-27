@@ -8,4 +8,4 @@ input
 output
 results
 
-*.log
+logs
