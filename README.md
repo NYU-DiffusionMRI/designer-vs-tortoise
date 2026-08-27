@@ -24,9 +24,21 @@ other versions without asking first.
 | DESIGNER v2 | `nyudiffusionmri/designer2:v2.0.16` |
 | TORTOISE V4 | `eurotomania/tortoise:latest` |
 
-`concatenate_inputs.sh` runs on the host's local MRtrix3 install (`dwicat`,
+`scripts/concatenate_inputs.sh` runs on the host's local MRtrix3 install (`dwicat`,
 `mrinfo`) — concatenation is upstream of both pipelines and isn't part of either
 vendor image.
+
+## Setup
+
+```
+conda env create -f environment.yml   # also installs this repo's own
+                                       # dwicompare package editable (pip -e .)
+conda activate designer-vs-tortoise
+```
+
+For an already-existing env, the editable install alone is `pip install -e .`
+(run from the project root). All scripts below are invoked from the project
+root, e.g. `./scripts/run_tmi.sh ...` or `python scripts/compare_maps.py ...`.
 
 ## Input data (`input/`)
 
@@ -56,17 +68,20 @@ by the scripts in this repo.
 
 ## Scripts
 
+All scripts live in `scripts/` and are invoked from the project root (see
+Setup above).
+
 | Script | Tool | Step | Input |
 |---|---|---|---|
-| `concatenate_inputs.sh` | MRtrix3 (`dwicat`, host) | merges series 28+30 → `output/concat/dwi_concat.*` | series 28, 30 |
-| `run_designer_denoise.sh` | DESIGNER v2 | `-denoise` only | `input/*_28.nii,input/*_30.nii` (native comma-list) |
-| `run_designer_degibbs.sh` | DESIGNER v2 | `-degibbs` only (RPG, `-pf 0.75 -pe_dir j-`) | `input/*_28.nii,input/*_30.nii` (native comma-list) |
-| `run_tortoise_denoise.sh` | TORTOISE V4 | `--denoising for_final` only | `output/concat/dwi_concat.nii` |
-| `run_tortoise_degibbs.sh` | TORTOISE V4 | `--gibbs 1` only | `output/concat/dwi_concat.nii` |
-| `run_designer_eddy.sh` | DESIGNER v2 | `-eddy -rpe_none -pe_dir j-` only (no reverse-PE) | `input/*_28.nii,input/*_30.nii` (native comma-list) |
-| `run_tortoise_eddy.sh` | TORTOISE V4 | `-c quadratic --epi off` only | `output/concat/dwi_concat.nii` |
+| `scripts/concatenate_inputs.sh` | MRtrix3 (`dwicat`, host) | merges series 28+30 → `output/concat/dwi_concat.*` | series 28, 30 |
+| `scripts/run_designer_denoise.sh` | DESIGNER v2 | `-denoise` only | `input/*_28.nii,input/*_30.nii` (native comma-list) |
+| `scripts/run_designer_degibbs.sh` | DESIGNER v2 | `-degibbs` only (RPG, `-pf 0.75 -pe_dir j-`) | `input/*_28.nii,input/*_30.nii` (native comma-list) |
+| `scripts/run_tortoise_denoise.sh` | TORTOISE V4 | `--denoising for_final` only | `output/concat/dwi_concat.nii` |
+| `scripts/run_tortoise_degibbs.sh` | TORTOISE V4 | `--gibbs 1` only | `output/concat/dwi_concat.nii` |
+| `scripts/run_designer_eddy.sh` | DESIGNER v2 | `-eddy -rpe_none -pe_dir j-` only (no reverse-PE) | `input/*_28.nii,input/*_30.nii` (native comma-list) |
+| `scripts/run_tortoise_eddy.sh` | TORTOISE V4 | `-c quadratic --epi off` only | `output/concat/dwi_concat.nii` |
 
-Run `concatenate_inputs.sh` before either `run_tortoise_*.sh` script — TORTOISE's
+Run `scripts/concatenate_inputs.sh` before either `run_tortoise_*.sh` script — TORTOISE's
 `--up_data` accepts exactly one NIfTI file, unlike DESIGNER's native
 comma-separated multi-series input, so the two shells must be pre-merged for
 TORTOISE only. See the header comment in each script for the full reasoning.

@@ -44,10 +44,11 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONCAT_DIR="${SCRIPT_DIR}/output/concat"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+CONCAT_DIR="${PROJECT_ROOT}/output/concat"
 DWI_NII="${CONCAT_DIR}/dwi_concat.nii"
 BVAL_FILE="${CONCAT_DIR}/dwi_concat.bval"
-OUT_DIR="${SCRIPT_DIR}/output/brain_mask"
+OUT_DIR="${PROJECT_ROOT}/output/brain_mask"
 
 B0_THRESHOLD=50
 
@@ -61,7 +62,7 @@ done
 
 if [[ ! -f "${DWI_NII}" ]] || [[ ! -f "${BVAL_FILE}" ]]; then
     echo "ERROR: ${DWI_NII} and/or ${BVAL_FILE} not found." >&2
-    echo "       Run concatenate_inputs.sh first." >&2
+    echo "       Run ./scripts/concatenate_inputs.sh first." >&2
     exit 1
 fi
 

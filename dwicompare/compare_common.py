@@ -2,9 +2,10 @@
 """
 compare_common.py
 
-Shared voxel-wise comparison helpers used by compare_dwi.py, compare_maps.py,
-and compare_maps_roi.py: load+validate a pair of NIfTI images, build a
-comparison mask, compute summary metrics, and pretty-print them.
+Shared voxel-wise comparison helpers used by compare_dwi_volumes.py,
+compare_maps.py, and compare_maps_roi.py: load+validate a pair of NIfTI
+images, build a comparison mask, compute summary metrics, and pretty-print
+them.
 """
 
 import re

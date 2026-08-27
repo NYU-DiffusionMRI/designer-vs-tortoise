@@ -29,9 +29,9 @@
 # script chains into run_tmi.sh to fit DTI/DKI parameter maps -- so a single
 # invocation goes from raw input through preprocessing to parametric maps.
 #
-# Usage
+# Usage (from the project root)
 # -----
-#   ./run_tortoise_denoise.sh [output_dir]
+#   ./scripts/run_tortoise_denoise.sh [output_dir]
 #
 # output_dir defaults to output/tortoise_denoise (relative to the repo root).
 # If output_dir already contains dwi_denoised.nii (i.e. TORTOISE has already
@@ -41,20 +41,21 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # input/ and output/ may be symlinks to a network mount (e.g. CIFS). Docker's
-# bind mount below does not follow host symlinks out of SCRIPT_DIR, so the
+# bind mount below does not follow host symlinks out of PROJECT_ROOT, so the
 # container would see a dangling symlink. Mount each symlink's real target at
 # the same absolute path so it resolves correctly inside the container too.
 EXTRA_MOUNTS=()
 for _d in input output; do
-    if [[ -L "${SCRIPT_DIR}/${_d}" ]]; then
-        _target="$(readlink -f "${SCRIPT_DIR}/${_d}")"
+    if [[ -L "${PROJECT_ROOT}/${_d}" ]]; then
+        _target="$(readlink -f "${PROJECT_ROOT}/${_d}")"
         EXTRA_MOUNTS+=(-v "${_target}:${_target}")
     fi
 done
 
-CONCAT_DIR="${SCRIPT_DIR}/output/concat"
+CONCAT_DIR="${PROJECT_ROOT}/output/concat"
 CONCAT_NII="${CONCAT_DIR}/dwi_concat.nii"
 TORTOISE_IMAGE="eurotomania/tortoise:latest"
 
@@ -62,19 +63,19 @@ TORTOISE_IMAGE="eurotomania/tortoise:latest"
 OUT_DIR_ARG="${1:-output/tortoise_denoise}"
 case "${OUT_DIR_ARG}" in
     /*) OUT_DIR="${OUT_DIR_ARG}" ;;
-    *)  OUT_DIR="${SCRIPT_DIR}/${OUT_DIR_ARG}" ;;
+    *)  OUT_DIR="${PROJECT_ROOT}/${OUT_DIR_ARG}" ;;
 esac
 
 case "${OUT_DIR}" in
-    "${SCRIPT_DIR}"/*) ;;
+    "${PROJECT_ROOT}"/*) ;;
     *)
-        echo "ERROR: output dir ${OUT_DIR} is outside the repo (${SCRIPT_DIR})." >&2
+        echo "ERROR: output dir ${OUT_DIR} is outside the repo (${PROJECT_ROOT})." >&2
         echo "       Docker only mounts the repo root, so the output dir must live inside it." >&2
         exit 1
         ;;
 esac
 
-OUT_REL="${OUT_DIR#"${SCRIPT_DIR}"/}"
+OUT_REL="${OUT_DIR#"${PROJECT_ROOT}"/}"
 FINAL_NII="${OUT_DIR}/dwi_denoised.nii"
 
 if [[ -f "${FINAL_NII}" ]]; then
@@ -84,7 +85,7 @@ if [[ -f "${FINAL_NII}" ]]; then
 else
     if [[ ! -f "${CONCAT_NII}" ]]; then
         echo "ERROR: ${CONCAT_NII} not found." >&2
-        echo "       Run ./concatenate_inputs.sh first (dwicat-merges series 28+30)." >&2
+        echo "       Run ./scripts/concatenate_inputs.sh first (dwicat-merges series 28+30)." >&2
         exit 1
     fi
 
@@ -99,7 +100,7 @@ else
 
     docker run --rm \
         --platform linux/amd64 \
-        -v "${SCRIPT_DIR}:/data" \
+        -v "${PROJECT_ROOT}:/data" \
         "${EXTRA_MOUNTS[@]}" \
         "${TORTOISE_IMAGE}" \
         TORTOISEProcess \

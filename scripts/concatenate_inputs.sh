@@ -66,8 +66,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-INPUT_DIR="${SCRIPT_DIR}/input"
-OUT_DIR="${SCRIPT_DIR}/output/concat"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+INPUT_DIR="${PROJECT_ROOT}/input"
+OUT_DIR="${PROJECT_ROOT}/output/concat"
 OUT_BASENAME="dwi_concat"
 
 if ! command -v dwicat >/dev/null 2>&1; then

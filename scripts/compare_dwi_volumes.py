@@ -11,8 +11,8 @@ mask must already share the same shape/affine.
     normalized = DWI / mean_b0
     diff       = abs(normalized_designer - normalized_tortoise), inside mask
 
-Usage:
-    python compare_dwi_volumes.py designer_output.nii.gz tortoise_output.nii.gz \
+Usage (from the project root):
+    python scripts/compare_dwi_volumes.py designer_output.nii.gz tortoise_output.nii.gz \
         --volumes 3 7 25 60 \
         --output-dir results/ --label "DESIGNER vs TORTOISE - denoising volumes"
 
@@ -45,7 +45,18 @@ import nibabel as nib
 import numpy as np
 import pandas as pd
 
-from compare_common import compute_metrics, load_and_validate, load_spatial_reference, print_summary, slugify
+from dwicompare.compare_common import (
+    compute_metrics,
+    load_and_validate,
+    load_spatial_reference,
+    print_summary,
+    slugify,
+)
+
+# Repo root, one level up from scripts/ -- anchors the CLI defaults below
+# regardless of the caller's CWD. Computed locally (not imported from
+# dwicompare) since it's a property of this repo layout, not of the package.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def parse_args():
@@ -65,13 +76,13 @@ def parse_args():
     parser.add_argument(
         "--mean-b0",
         type=Path,
-        default=Path("output/brain_mask/mean_b0.nii.gz"),
+        default=PROJECT_ROOT / "output/brain_mask/mean_b0.nii.gz",
         help="Common mean-b0 NIfTI used to normalize both images (default: output/brain_mask/mean_b0.nii.gz)",
     )
     parser.add_argument(
         "--mask",
         type=Path,
-        default=Path("output/brain_mask/brain_mask.nii.gz"),
+        default=PROJECT_ROOT / "output/brain_mask/brain_mask.nii.gz",
         help="Common BET brain mask NIfTI (default: output/brain_mask/brain_mask.nii.gz)",
     )
     parser.add_argument(
@@ -89,8 +100,8 @@ def parse_args():
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("results/"),
-        help="Parent directory for the timestamped run folder (default: ./results/)",
+        default=PROJECT_ROOT / "results",
+        help="Parent directory for the timestamped run folder (default: <project root>/results/)",
     )
     parser.add_argument(
         "--label",

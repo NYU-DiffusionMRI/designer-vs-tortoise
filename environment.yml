@@ -8,3 +8,6 @@ dependencies:
   - pandas
   - nibabel
   - matplotlib
+  - pip
+  - pip:
+      - -e .

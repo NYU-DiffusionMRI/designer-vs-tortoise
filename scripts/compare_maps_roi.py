@@ -13,8 +13,8 @@ For each ROI and each map, the mean value within that ROI is computed
 separately for the designer and tortoise maps, giving one (x, y) point per
 ROI: x = designer ROI mean, y = tortoise ROI mean.
 
-Usage:
-    python compare_maps_roi.py output/designer_denoise/params output/tortoise_denoise/params \
+Usage (from the project root):
+    python scripts/compare_maps_roi.py output/designer_denoise/params output/tortoise_denoise/params \
         --output-dir results/ --label "DESIGNER vs TORTOISE - ROI means"
 
 --fa-range/--md-range/--mw-range set the shared x/y axis range (and the span
@@ -42,13 +42,18 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from compare_common import (
+from dwicompare.compare_common import (
     MAP_FILENAMES,
     load_and_validate,
     load_spatial_reference,
     resolve_map_path,
     slugify,
 )
+
+# Repo root, one level up from scripts/ -- anchors the CLI defaults below
+# regardless of the caller's CWD. Computed locally (not imported from
+# dwicompare) since it's a property of this repo layout, not of the package.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 DEFAULT_FA_RANGE = (0.0, 1.0)
 DEFAULT_MD_RANGE = (0.0, 3.0)
@@ -72,7 +77,7 @@ def parse_args():
     parser.add_argument(
         "--seg",
         type=Path,
-        default=Path("output/samseg/seg2dwi.nii.gz"),
+        default=PROJECT_ROOT / "output/samseg/seg2dwi.nii.gz",
         help="Segmentation NIfTI defining ROIs, same shape/affine as the maps "
         "(default: output/samseg/seg2dwi.nii.gz). Label 0 is excluded.",
     )
@@ -103,8 +108,8 @@ def parse_args():
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("results/"),
-        help="Parent directory for the timestamped run folder (default: ./results/)",
+        default=PROJECT_ROOT / "results",
+        help="Parent directory for the timestamped run folder (default: <project root>/results/)",
     )
     parser.add_argument(
         "--label",

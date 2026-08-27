@@ -11,13 +11,13 @@
 # on the host -- this script runs it the same dockerized way as
 # run_designer_denoise.sh / run_designer_degibbs.sh.
 #
-# Usage
+# Usage (from the project root)
 # -----
-#   ./run_tmi.sh <path/to/dwi.nii>
+#   ./scripts/run_tmi.sh <path/to/dwi.nii>
 #
 # e.g.:
-#   ./run_tmi.sh output/designer_denoise/dwi_denoised.nii
-#   ./run_tmi.sh output/tortoise_degibbs/dwi_degibbs.nii
+#   ./scripts/run_tmi.sh output/designer_denoise/dwi_denoised.nii
+#   ./scripts/run_tmi.sh output/tortoise_degibbs/dwi_degibbs.nii
 #
 # Output: params/ created next to the input DWI (e.g.
 # output/designer_denoise/params/), containing tmi's DTI + DKI maps.
@@ -42,24 +42,25 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DESIGNER_IMAGE="nyudiffusionmri/designer2:v2.0.16"
-BRAIN_MASK="${SCRIPT_DIR}/output/brain_mask/brain_mask.nii.gz"
+BRAIN_MASK="${PROJECT_ROOT}/output/brain_mask/brain_mask.nii.gz"
 
 # input/ and output/ may be symlinks to a network mount (e.g. CIFS). Docker's
-# bind mount below does not follow host symlinks out of SCRIPT_DIR, so the
+# bind mount below does not follow host symlinks out of PROJECT_ROOT, so the
 # container would see a dangling symlink. Mount each symlink's real target at
 # the same absolute path so it resolves correctly inside the container too.
 EXTRA_MOUNTS=()
 for _d in input output; do
-    if [[ -L "${SCRIPT_DIR}/${_d}" ]]; then
-        _target="$(readlink -f "${SCRIPT_DIR}/${_d}")"
+    if [[ -L "${PROJECT_ROOT}/${_d}" ]]; then
+        _target="$(readlink -f "${PROJECT_ROOT}/${_d}")"
         EXTRA_MOUNTS+=(-v "${_target}:${_target}")
     fi
 done
 
 if [[ $# -ne 1 ]]; then
-    echo "Usage: $0 <path/to/dwi.nii>" >&2
-    echo "  e.g. $0 output/designer_denoise/dwi_denoised.nii" >&2
+    echo "Usage: ./scripts/run_tmi.sh <path/to/dwi.nii>" >&2
+    echo "  e.g. ./scripts/run_tmi.sh output/designer_denoise/dwi_denoised.nii" >&2
     exit 1
 fi
 
@@ -73,9 +74,9 @@ fi
 INPUT_ABS="$(cd "$(dirname "${INPUT_ARG}")" && pwd)/$(basename "${INPUT_ARG}")"
 
 case "${INPUT_ABS}" in
-    "${SCRIPT_DIR}"/*) ;;
+    "${PROJECT_ROOT}"/*) ;;
     *)
-        echo "ERROR: ${INPUT_ABS} is outside the repo (${SCRIPT_DIR})." >&2
+        echo "ERROR: ${INPUT_ABS} is outside the repo (${PROJECT_ROOT})." >&2
         echo "       Docker only mounts the repo root, so the input must live inside it." >&2
         exit 1
         ;;
@@ -83,7 +84,7 @@ esac
 
 if [[ ! -f "${BRAIN_MASK}" ]]; then
     echo "ERROR: ${BRAIN_MASK} not found." >&2
-    echo "       Run ./extract_brain_mask.sh first." >&2
+    echo "       Run ./scripts/extract_brain_mask.sh first." >&2
     exit 1
 fi
 
@@ -106,11 +107,11 @@ OUTPUT_DIR="$(dirname "${INPUT_ABS}")/params"
 mkdir -p "${OUTPUT_DIR}"
 
 # Paths as seen inside the container (repo root bind-mounted at /data).
-INPUT_REL="${INPUT_ABS#"${SCRIPT_DIR}"/}"
-BVAL_REL="${BVAL#"${SCRIPT_DIR}"/}"
-BVEC_REL="${BVEC#"${SCRIPT_DIR}"/}"
-MASK_REL="${BRAIN_MASK#"${SCRIPT_DIR}"/}"
-OUTPUT_REL="${OUTPUT_DIR#"${SCRIPT_DIR}"/}"
+INPUT_REL="${INPUT_ABS#"${PROJECT_ROOT}"/}"
+BVAL_REL="${BVAL#"${PROJECT_ROOT}"/}"
+BVEC_REL="${BVEC#"${PROJECT_ROOT}"/}"
+MASK_REL="${BRAIN_MASK#"${PROJECT_ROOT}"/}"
+OUTPUT_REL="${OUTPUT_DIR#"${PROJECT_ROOT}"/}"
 
 echo "== run_tmi.sh =="
 echo "Image:  ${DESIGNER_IMAGE}"
@@ -122,7 +123,7 @@ echo
 
 docker run --rm \
     --platform linux/amd64 \
-    -v "${SCRIPT_DIR}:/data" \
+    -v "${PROJECT_ROOT}:/data" \
     "${EXTRA_MOUNTS[@]}" \
     -w /data \
     "${DESIGNER_IMAGE}" \

@@ -10,8 +10,8 @@ kurtosis estimate. No resampling is performed -- each map pair must already
 share the same shape and affine. Comparisons are restricted to a common
 brain mask (--mask).
 
-Usage:
-    python compare_maps.py output/designer_denoise/params output/tortoise_denoise/params \
+Usage (from the project root):
+    python scripts/compare_maps.py output/designer_denoise/params output/tortoise_denoise/params \
         --output-dir results/ --label "DESIGNER vs TORTOISE - denoising maps"
 
 --mask defaults to the common BET brain mask produced by extract_brain_mask.sh
@@ -70,7 +70,7 @@ import nibabel as nib
 import numpy as np
 import pandas as pd
 
-from compare_common import (
+from dwicompare.compare_common import (
     MAP_FILENAMES,
     build_mask,
     compute_metrics,
@@ -80,6 +80,11 @@ from compare_common import (
     resolve_map_path,
     slugify,
 )
+
+# Repo root, one level up from scripts/ -- anchors the CLI defaults below
+# regardless of the caller's CWD. Computed locally (not imported from
+# dwicompare) since it's a property of this repo layout, not of the package.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 DEFAULT_ABS_RANGE = (0.0, 0.1)
 DEFAULT_REL_RANGE = (0.0, 100.0)
@@ -95,7 +100,7 @@ def parse_args():
     parser.add_argument(
         "--mask",
         type=Path,
-        default=Path("output/brain_mask/brain_mask.nii.gz"),
+        default=PROJECT_ROOT / "output/brain_mask/brain_mask.nii.gz",
         help="Common BET brain mask NIfTI (default: output/brain_mask/brain_mask.nii.gz)",
     )
     parser.add_argument(
@@ -127,8 +132,8 @@ def parse_args():
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("results/"),
-        help="Parent directory for the timestamped run folder (default: ./results/)",
+        default=PROJECT_ROOT / "results",
+        help="Parent directory for the timestamped run folder (default: <project root>/results/)",
     )
     parser.add_argument(
         "--label",
