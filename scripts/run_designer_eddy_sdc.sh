@@ -39,10 +39,23 @@
 #   command line -- i.e. eddy consumes topup's output via FSL's own native
 #   mechanism, all within this single `designer -eddy -rpe_pair ...` call.
 #
+#   Known DESIGNER v2.0.16 bug, worked around below: when -rpe_pair is
+#   given a multi-volume image (series 38 has 2 b=0 volumes), DESIGNER's
+#   own code calls `dwiextract -bzero` directly on the raw path to isolate
+#   the b=0s, but never imports a gradient table for it first (its
+#   computed .bval/.bvec sidecar paths for the RPE image go unused) --
+#   dwiextract then always fails with "no valid diffusion gradient table
+#   found" (reproduced independently of designer; MRtrix3 does not
+#   auto-detect same-basename .bval/.bvec next to a plain .nii). This
+#   script works around it by pre-averaging the PA pair into a single mean
+#   b0 volume itself (mirroring DESIGNER's own "mean b0" convention for
+#   the forward direction), which routes through DESIGNER's single-volume
+#   -rpe_pair path instead (plain mrconvert -json_import, no dwiextract).
+#
 # Docker image (pinned, per user's requirement -- do not change without
 # being asked): nyudiffusionmri/designer2:v2.0.16
 #
-# --gpus all: required for both the FSL `eddy` and FSL `topup` steps
+# --gpus all: required for both the FSL `eddy` step
 # DESIGNER runs internally (same requirement as run_designer_eddy.sh's
 # eddy-only case; topup itself is lightweight but eddy's CUDA path needs
 # the GPU visible to the container).
@@ -127,17 +140,42 @@ else
     # Paths as seen inside the container (repo root bind-mounted at /data).
     B1_REL="input/$(basename "${B1_NII}")"
     B2_REL="input/$(basename "${B2_NII}")"
-    PA_REL="input/$(basename "${PA_NII}")"
 
     PE_DIR="j-"
 
     mkdir -p "${OUT_DIR}/scratch"
 
+    # Work around a bug in DESIGNER v2.0.16's own -rpe_pair handling: when
+    # given a multi-volume reverse-PE image (our series 38 has 2 b=0
+    # volumes), its designer_func_wrappers.py calls MRtrix3 `dwiextract
+    # -bzero` directly on the raw path to isolate the b=0s -- but it
+    # computes the RPE image's .bval/.bvec sidecar paths and never actually
+    # imports them first, so dwiextract always fails with "no valid
+    # diffusion gradient table found" (MRtrix3 does not auto-detect
+    # same-basename .bval/.bvec next to a plain .nii; reproduced
+    # independently of designer). Work around it by pre-averaging the PA
+    # pair into a single mean-b0 volume ourselves -- the same "mean b0"
+    # convention DESIGNER's own code already uses for the forward
+    # direction -- which routes through its single-volume -rpe_pair code
+    # path instead (plain mrconvert -json_import, no dwiextract call).
+    PA_NII_BASENAME="$(basename "${PA_NII%.nii}")"
+    PA_MEAN_REL="${OUT_REL}/scratch/${PA_NII_BASENAME}_mean_b0.nii"
+    docker run --rm \
+        --platform linux/amd64 \
+        -v "${PROJECT_ROOT}:/data" \
+        "${EXTRA_MOUNTS[@]}" \
+        "${DESIGNER_IMAGE}" \
+        mrmath "/data/input/$(basename "${PA_NII}")" mean "/data/${PA_MEAN_REL}" -axis 3
+    # DESIGNER looks for a .json sidecar at the same basename as -rpe_pair.
+    cp "${PA_NII%.nii}.json" "${OUT_DIR}/scratch/${PA_NII_BASENAME}_mean_b0.json"
+
     echo "== run_designer_eddy_sdc.sh =="
     echo "Image:  ${DESIGNER_IMAGE}"
     echo "Inputs: ${B1_REL} , ${B2_REL}  (native DESIGNER comma-list, not concatenated)"
-    echo "Reverse-PE (SDC): ${PA_REL}"
-    echo "Step:   -eddy (FSL eddy) + SDC, -rpe_pair ${PA_REL} -pe_dir ${PE_DIR}"
+    echo "Reverse-PE (SDC): ${PA_MEAN_REL}  (mean b0 of input/$(basename "${PA_NII}"),"
+    echo "                  worked around a dwiextract bug in DESIGNER's -rpe_pair"
+    echo "                  handling of multi-volume RPE images -- see script header)"
+    echo "Step:   -eddy (FSL eddy) + SDC, -rpe_pair ${PA_MEAN_REL} -pe_dir ${PE_DIR}"
     echo "        (DESIGNER runs FSL topup on the forward/PA b0 pair, then FSL"
     echo "         eddy with --topup=<topup output> -- topup's output feeds eddy"
     echo "         directly, all within this one designer invocation)"
@@ -153,7 +191,7 @@ else
         "${DESIGNER_IMAGE}" \
         designer \
             -eddy \
-            -rpe_pair "/data/${PA_REL}" \
+            -rpe_pair "/data/${PA_MEAN_REL}" \
             -pe_dir "${PE_DIR}" \
             -scratch "/data/${OUT_REL}/scratch" \
             -nocleanup \
