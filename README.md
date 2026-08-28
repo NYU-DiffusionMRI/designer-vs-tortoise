@@ -9,10 +9,13 @@ Current comparison covers **only**:
 3. Eddy-current + motion correction — DESIGNER v2: FSL eddy via `-eddy -rpe_none`
    (no reverse phase-encoding data) · TORTOISE V4: `-c quadratic` (motion &
    eddy-currents) with `--epi off`
+4. Eddy-current + motion correction WITH susceptibility distortion correction
+   (SDC), using the reverse-PE (PA) pair — DESIGNER v2: FSL eddy via
+   `-eddy -rpe_pair <PA>` (GPU) · TORTOISE V4: `-c quadratic --epi DRBUDDI
+   -d <PA>` (GPU, `TORTOISEProcess_cuda`)
 
-Topup / EPI susceptibility distortion correction, gradient nonlinearity
-correction (GNC), and all other preprocessing are explicitly out of scope and
-disabled in every script below.
+Gradient nonlinearity correction (GNC) and all other preprocessing are
+explicitly out of scope and disabled in every script below.
 
 ## Pinned Docker images
 
@@ -52,7 +55,7 @@ to this scope:
 | `_29_ph` | same, phase recon | 21 | 0 (placeholder) | `j-` | complex-recon phase pair — **excluded** |
 | `_30` | V6meso_RMR_b2_Delta63 | 62 | ~2000 | `j-` | DWI shell 2 — **used** |
 | `_31_ph` | same, phase recon | 62 | 0 (placeholder) | `j-` | complex-recon phase pair — **excluded** |
-| `_38` | V6meso_RMR_PA_Delta63 | 2 | 0 | `j` | reverse-PE topup pair — **excluded** (out of scope) |
+| `_38` | V6meso_RMR_PA_Delta63 | 2 | 0 | `j` | reverse-PE topup pair — **used** (SDC scripts only) |
 | `_39_ph` | same, phase recon | 1 | 0 | `j` | complex-recon phase pair — **excluded** |
 
 **`_ph` is not reverse phase-encoding.** Each `_ph` file's JSON sidecar has
@@ -60,11 +63,12 @@ to this scope:
 `part-phase` `BidsGuess`, and identical volume count/geometry/PE-direction to its
 magnitude twin — it's the scanner's complex-reconstruction phase image, paired with
 each magnitude series (28↔29_ph, 30↔31_ph, 38↔39_ph). The actual reverse-PE pair is
-series 28/30 (`j-`) vs. series 38 (`j`), which exists for topup/eddy susceptibility
-correction and is out of scope here.
+series 28/30 (`j-`) vs. series 38 (`j`), which exists for topup/DR-BUDDI
+susceptibility distortion correction (SDC), used by the `*_eddy_sdc.sh` scripts only.
 
-Series 28 + 30 (the two DWI shells, 83 volumes combined) are the only inputs used
-by the scripts in this repo.
+Series 28 + 30 (the two DWI shells, 83 volumes combined) are the primary inputs
+used by every script in this repo; series 38 (the PA reverse-PE pair) is additionally
+used by `run_designer_eddy_sdc.sh` / `run_tortoise_eddy_sdc.sh` for SDC.
 
 ## Scripts
 
@@ -80,8 +84,10 @@ Setup above).
 | `scripts/run_tortoise_degibbs.sh` | TORTOISE V4 | `--gibbs 1` only | `output/concat/dwi_concat.nii` |
 | `scripts/run_designer_eddy.sh` | DESIGNER v2 | `-eddy -rpe_none -pe_dir j-` only (no reverse-PE) | `input/*_28.nii,input/*_30.nii` (native comma-list) |
 | `scripts/run_tortoise_eddy.sh` | TORTOISE V4 | `-c quadratic --epi off` only | `output/concat/dwi_concat.nii` |
+| `scripts/run_designer_eddy_sdc.sh` | DESIGNER v2 (GPU) | `-eddy -rpe_pair <PA> -pe_dir j-` (SDC) | `input/*_28.nii,input/*_30.nii,input/*_38.nii` |
+| `scripts/run_tortoise_eddy_sdc.sh` | TORTOISE V4 (GPU, `TORTOISEProcess_cuda`) | `-c quadratic --epi DRBUDDI -d <PA>` (SDC) | `output/concat/dwi_concat.nii` + `input/*_38.nii` |
 
-Run `scripts/concatenate_inputs.sh` before either `run_tortoise_*.sh` script — TORTOISE's
+Run `scripts/concatenate_inputs.sh` before any `run_tortoise_*.sh` script — TORTOISE's
 `--up_data` accepts exactly one NIfTI file, unlike DESIGNER's native
 comma-separated multi-series input, so the two shells must be pre-merged for
 TORTOISE only. See the header comment in each script for the full reasoning.
@@ -92,15 +98,27 @@ TORTOISE only. See the header comment in each script for the full reasoning.
   intensity-scaling correction doesn't leak into the DESIGNER arm.
 - The denoise-only and degibbs-only scripts per tool each start independently from
   the same input (not chained), so each algorithm is isolated for comparison.
-- Phase (`_ph`) series and the reverse-PE pair (`_38`/`_39_ph`) are excluded from
-  this comparison entirely.
-- Reverse-PE data is intentionally not used for eddy-current + motion
-  correction either: eddy-current/motion correction and EPI/susceptibility
+- Phase (`_ph`) series are excluded from this comparison entirely. The reverse-PE
+  pair (`_38`) is used, but only by the `*_eddy_sdc.sh` scripts, for SDC.
+- `run_designer_eddy.sh` / `run_tortoise_eddy.sh` intentionally do not use
+  reverse-PE data: eddy-current/motion correction and EPI/susceptibility
   (topup) correction are independent steps in both tools — confirmed directly
   against each pinned image's own `--help` output. DESIGNER's `-rpe_none`
   performs "eddy current and motion correction only" with no reverse-PE
   input; TORTOISE's `-c` (motion & eddy-currents) and `--epi` (susceptibility
   correction) are separate flags with no dependency between them.
+- `run_designer_eddy_sdc.sh` / `run_tortoise_eddy_sdc.sh` add SDC using the
+  reverse-PE pair (series `_38`), with GPU for both tools (`--gpus all`, and
+  `TORTOISEProcess_cuda` for TORTOISE, which — unlike FSL `eddy` — does not
+  auto-detect GPU and requires the CUDA-suffixed binary explicitly). The
+  structural (MPRAGE) image is intentionally not passed to TORTOISE's DR-BUDDI
+  (`-s/--structural`), to keep parity with every other script's DWI-only input
+  convention. DESIGNER's `-rpe_pair` internally chains FSL `topup`'s output
+  into FSL `eddy` (`--topup=<prefix>`) within one `designer` call, matching
+  FSL's own topup→eddy workflow; TORTOISE's own fixed pipeline order instead
+  runs motion+eddy correction *before* DR-BUDDI SDC — an intentional, accepted
+  difference in each tool's native architecture, not a bug (see the header
+  comment in `run_tortoise_eddy_sdc.sh` for the full reasoning).
 
 None of these scripts have been executed — review the commands against your own
 DESIGNER/TORTOISE install before running them.
