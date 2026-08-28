@@ -3,9 +3,9 @@
 compare_common.py
 
 Shared voxel-wise comparison helpers used by compare_dwi_volumes.py,
-compare_maps.py, and compare_maps_roi.py: load+validate a pair of NIfTI
-images, build a comparison mask, compute summary metrics, and pretty-print
-them.
+compare_maps.py, compare_maps_roi.py, and roi_outliers.py: load+validate a
+pair of NIfTI images, build a comparison mask, compute summary metrics,
+pretty-print them, and parse a FreeSurferColorLUT.txt for ROI names.
 """
 
 import re
@@ -23,6 +23,29 @@ MAP_FILENAMES = {
     "MD": "md_dki.nii",
     "MW": "mk_wdki.nii",
 }
+
+
+def load_roi_lut(path) -> dict:
+    """Parse a FreeSurferColorLUT.txt-format file (id  name  R G B A per
+    line, '#' comments, blank lines) into {label_id: name}. Returns {} if
+    path is None or missing, so callers can fall back to a generated name
+    (e.g. f"label-{n}") instead of failing when FreeSurfer isn't available."""
+    if path is None or not path.is_file():
+        return {}
+    lut = {}
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        try:
+            label_id = int(parts[0])
+        except ValueError:
+            continue
+        lut[label_id] = parts[1]
+    return lut
 
 
 def slugify(text: str) -> str:
