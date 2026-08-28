@@ -25,7 +25,7 @@
 # Flags used:
 #   -DKI -WDKI     tensor fitting only -- no -SMI, no -DTI (per user's
 #                 request: SMI excluded entirely).
-#   -mask         output/brain_mask/brain_mask.nii.gz (from
+#   -mask         output/brain_mask_original/brain_mask.nii.gz (from
 #                 extract_brain_mask.sh).
 #   -fslbval/-fslbvec
 #                 explicitly point at the input's gradient-table sidecars.
@@ -44,7 +44,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DESIGNER_IMAGE="nyudiffusionmri/designer2:v2.0.16"
-BRAIN_MASK="${PROJECT_ROOT}/output/brain_mask/brain_mask.nii.gz"
+BRAIN_MASK="${PROJECT_ROOT}/output/brain_mask_original/brain_mask.nii.gz"
 
 # input/ and output/ may be symlinks to a network mount (e.g. CIFS). Docker's
 # bind mount below does not follow host symlinks out of PROJECT_ROOT, so the

@@ -13,6 +13,10 @@ Current comparison covers **only**:
    (SDC), using the reverse-PE (PA) pair — DESIGNER v2: FSL eddy via
    `-eddy -rpe_pair <PA>` (GPU) · TORTOISE V4: `-c quadratic --epi DRBUDDI
    -d <PA>` (GPU, `TORTOISEProcess_cuda`)
+5. Full pipeline (1–4 combined, end-to-end) — DESIGNER v2: one `designer
+   -denoise -degibbs -eddy -rpe_pair <PA>` call (GPU) · TORTOISE V4: one
+   `TORTOISEProcess_cuda --denoising for_final --gibbs 1 -c quadratic
+   --epi DRBUDDI -d <PA>` call (GPU)
 
 Gradient nonlinearity correction (GNC) and all other preprocessing are
 explicitly out of scope and disabled in every script below.
@@ -86,6 +90,8 @@ Setup above).
 | `scripts/run_tortoise_eddy.sh` | TORTOISE V4 | `-c quadratic --epi off` only | `output/concat/dwi_concat.nii` |
 | `scripts/run_designer_eddy_sdc.sh` | DESIGNER v2 (GPU) | `-eddy -rpe_pair <PA> -pe_dir j-` (SDC) | `input/*_28.nii,input/*_30.nii,input/*_38.nii` |
 | `scripts/run_tortoise_eddy_sdc.sh` | TORTOISE V4 (GPU, `TORTOISEProcess_cuda`) | `-c quadratic --epi DRBUDDI -d <PA>` (SDC) | `output/concat/dwi_concat.nii` + `input/*_38.nii` |
+| `scripts/run_designer_full.sh` | DESIGNER v2 (GPU) | `-denoise -degibbs -eddy -rpe_pair <PA>` (full pipeline, one invocation) | `input/*_28.nii,input/*_30.nii,input/*_38.nii` |
+| `scripts/run_tortoise_full.sh` | TORTOISE V4 (GPU, `TORTOISEProcess_cuda`) | `--denoising for_final --gibbs 1 -c quadratic --epi DRBUDDI -d <PA>` (full pipeline, one invocation) | `output/concat/dwi_concat.nii` + `input/*_38.nii` |
 
 Run `scripts/concatenate_inputs.sh` before any `run_tortoise_*.sh` script — TORTOISE's
 `--up_data` accepts exactly one NIfTI file, unlike DESIGNER's native
@@ -119,6 +125,9 @@ TORTOISE only. See the header comment in each script for the full reasoning.
   runs motion+eddy correction *before* DR-BUDDI SDC — an intentional, accepted
   difference in each tool's native architecture, not a bug (see the header
   comment in `run_tortoise_eddy_sdc.sh` for the full reasoning).
-
-None of these scripts have been executed — review the commands against your own
-DESIGNER/TORTOISE install before running them.
+- `run_designer_full.sh` / `run_tortoise_full.sh` run the complete pipeline
+  (denoise + degibbs + eddy/motion + SDC) end-to-end, as a single combined
+  invocation per tool (`designer -denoise -degibbs -eddy -rpe_pair <PA>` /
+  one `TORTOISEProcess_cuda` call with all steps enabled). DESIGNER's `-normalize`
+  flag (per-series b0 intensity matching, meant for scanner-gain drift across separate input series)
+  was not used since the series 28 and 30's intensity scales already match/.
