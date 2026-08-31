@@ -1,133 +1,89 @@
-Compare Designer vs Tortoise
+# Compare Designer vs Tortoise
+
+Compares two DWI preprocessing pipelines — **DESIGNER v2** and **TORTOISE V4** —
+stage by stage, on the same acquisition. Each stage runs through its tool's
+pinned Docker image, gets fit to DKI/WDKI parameter maps with `tmi`, and the
+two tools' outputs are compared voxel-wise and ROI-wise.
 
 ## Scope
 
-Current comparison covers **only**:
+1. Denoising — DESIGNER: MP-PCA · TORTOISE: `--denoising for_final`
+2. Gibbs ringing removal — DESIGNER: RPG (`-degibbs -pf 0.75`) · TORTOISE: `--gibbs 1`
+3. Eddy-current + motion correction (no SDC) — DESIGNER: `-eddy -rpe_none` (GPU) · TORTOISE: `-c quadratic --epi off`
+4. Eddy + motion + susceptibility distortion correction (SDC), using the reverse-PE (PA) pair — DESIGNER: `-eddy -rpe_pair <PA>` (GPU) · TORTOISE: `-c quadratic --epi DRBUDDI` (GPU, `TORTOISEProcess_cuda`)
+5. Full pipeline (1–4 combined, one call per tool)
 
-1. Denoising — DESIGNER v2: MP-PCA (box patch) · TORTOISE V4: denoising step only
-2. Gibbs ringing removal — DESIGNER v2: RPG · TORTOISE V4: Gibbs-removal step only
-3. Eddy-current + motion correction — DESIGNER v2: FSL eddy via `-eddy -rpe_none`
-   (no reverse phase-encoding data) · TORTOISE V4: `-c quadratic` (motion &
-   eddy-currents) with `--epi off`
-4. Eddy-current + motion correction WITH susceptibility distortion correction
-   (SDC), using the reverse-PE (PA) pair — DESIGNER v2: FSL eddy via
-   `-eddy -rpe_pair <PA>` (GPU) · TORTOISE V4: `-c quadratic --epi DRBUDDI
-   -d <PA>` (GPU, `TORTOISEProcess_cuda`)
-5. Full pipeline (1–4 combined, end-to-end) — DESIGNER v2: one `designer
-   -denoise -degibbs -eddy -rpe_pair <PA>` call (GPU) · TORTOISE V4: one
-   `TORTOISEProcess_cuda --denoising for_final --gibbs 1 -c quadratic
-   --epi DRBUDDI -d <PA>` call (GPU)
+## Requirements
 
-Gradient nonlinearity correction (GNC) and all other preprocessing are
-explicitly out of scope and disabled in every script below.
-
-## Pinned Docker images
-
-Only these image tags are used anywhere in this repo's scripts. Do not substitute
-other versions without asking first.
+Pinned Docker images:
 
 | Pipeline | Image |
 |---|---|
 | DESIGNER v2 | `nyudiffusionmri/designer2:v2.0.16` |
 | TORTOISE V4 | `eurotomania/tortoise:latest` |
 
-`scripts/concatenate_inputs.sh` runs on the host's local MRtrix3 install (`dwicat`,
-`mrinfo`) — concatenation is upstream of both pipelines and isn't part of either
-vendor image.
+Host tools (not containerized):
+- **MRtrix3** (`dwicat`, `mrconvert`) — for `concatenate_inputs.sh`
+- **FSL** (`bet`, `fslmaths`, `fslselectvols`, `$FSLDIR`) — for `extract_brain_mask.sh`
+- **FreeSurfer** (`module load freesurfer` → `$FREESURFER_HOME`) — only for `roi_outliers.py`'s ROI-name lookup
+
+A GPU is required for the `_eddy_sdc` and `_full` scripts (`--gpus all`); the
+other scripts run on CPU.
 
 ## Setup
 
 ```
-conda env create -f environment.yml   # also installs this repo's own
-                                       # dwicompare package editable (pip -e .)
+conda env create -f environment.yml   # also pip-installs this repo's own
+                                       # dwicompare package editable (-e .)
 conda activate designer-vs-tortoise
 ```
 
-For an already-existing env, the editable install alone is `pip install -e .`
-(run from the project root). All scripts below are invoked from the project
-root, e.g. `./scripts/run_tmi.sh ...` or `python scripts/compare_maps.py ...`.
+For an already-existing env, the editable install alone is `pip install -e .`.
+All commands below are run from the project root.
 
 ## Input data (`input/`)
 
-One study, several series from the same session. Only two are DWI series relevant
-to this scope:
+One study, one session. Only these series matter:
 
 | Series | Description | Vols | b-value | PE dir | Role |
 |---|---|---|---|---|---|
-| `_9` | MPRAGE | 1 | — | — | anatomical T1 — **excluded** (not DWI) |
-| `_28` | V6meso_RMR_b1_Delta63 | 21 | ~1000 | `j-` | DWI shell 1 — **used** |
-| `_29_ph` | same, phase recon | 21 | 0 (placeholder) | `j-` | complex-recon phase pair — **excluded** |
-| `_30` | V6meso_RMR_b2_Delta63 | 62 | ~2000 | `j-` | DWI shell 2 — **used** |
-| `_31_ph` | same, phase recon | 62 | 0 (placeholder) | `j-` | complex-recon phase pair — **excluded** |
-| `_38` | V6meso_RMR_PA_Delta63 | 2 | 0 | `j` | reverse-PE topup pair — **used** (SDC scripts only) |
-| `_39_ph` | same, phase recon | 1 | 0 | `j` | complex-recon phase pair — **excluded** |
+| `_28` | b1, Delta63 | 21 | ~1000 | `j-` | DWI shell 1 — used |
+| `_30` | b2, Delta63 | 62 | ~2000 | `j-` | DWI shell 2 — used |
+| `_38` | PA, Delta63 | 2 | 0 | `j` | reverse-PE pair — used by `*_eddy_sdc`/`*_full` only |
+| `_9`, `_29_ph`, `_31_ph`, `_39_ph` | MPRAGE / phase-recon pairs | — | — | — | excluded (not DWI / not reverse-PE) |
 
-**`_ph` is not reverse phase-encoding.** Each `_ph` file's JSON sidecar has
-`ImageType` containing `"P"`/`"PHASE"`, a `_PHASE`-suffixed `SeriesDescription`, a
-`part-phase` `BidsGuess`, and identical volume count/geometry/PE-direction to its
-magnitude twin — it's the scanner's complex-reconstruction phase image, paired with
-each magnitude series (28↔29_ph, 30↔31_ph, 38↔39_ph). The actual reverse-PE pair is
-series 28/30 (`j-`) vs. series 38 (`j`), which exists for topup/DR-BUDDI
-susceptibility distortion correction (SDC), used by the `*_eddy_sdc.sh` scripts only.
+Series 28 + 30 are read directly by every DESIGNER script and (after
+concatenation) every TORTOISE script; series 38 is additionally used for SDC.
 
-Series 28 + 30 (the two DWI shells, 83 volumes combined) are the primary inputs
-used by every script in this repo; series 38 (the PA reverse-PE pair) is additionally
-used by `run_designer_eddy_sdc.sh` / `run_tortoise_eddy_sdc.sh` for SDC.
+## Pipeline
 
-## Scripts
+1. `./scripts/concatenate_inputs.sh` — required once, before any TORTOISE script (DESIGNER reads series 28/30 directly and doesn't need it)
+2. `./scripts/extract_brain_mask.sh` — required once, before `run_tmi.sh` or the compare scripts
+3. Run whichever `run_designer_*.sh` / `run_tortoise_*.sh` stage scripts you want to compare — each produces `dwi_<stage>.nii` and automatically chains into `run_tmi.sh` to fit DKI/WDKI maps into a `params/` subdirectory. Re-running is idempotent: if the output DWI already exists, the preprocessing step is skipped and only `tmi` reruns.
+4. Compare a DESIGNER/TORTOISE pair for the same stage with one of the `compare_*.py` scripts.
 
-All scripts live in `scripts/` and are invoked from the project root (see
-Setup above).
+### Scripts
 
-| Script | Tool | Step | Input |
-|---|---|---|---|
-| `scripts/concatenate_inputs.sh` | MRtrix3 (`dwicat`, host) | merges series 28+30 → `output/concat/dwi_concat.*` | series 28, 30 |
-| `scripts/run_designer_denoise.sh` | DESIGNER v2 | `-denoise` only | `input/*_28.nii,input/*_30.nii` (native comma-list) |
-| `scripts/run_designer_degibbs.sh` | DESIGNER v2 | `-degibbs` only (RPG, `-pf 0.75 -pe_dir j-`) | `input/*_28.nii,input/*_30.nii` (native comma-list) |
-| `scripts/run_tortoise_denoise.sh` | TORTOISE V4 | `--denoising for_final` only | `output/concat/dwi_concat.nii` |
-| `scripts/run_tortoise_degibbs.sh` | TORTOISE V4 | `--gibbs 1` only | `output/concat/dwi_concat.nii` |
-| `scripts/run_designer_eddy.sh` | DESIGNER v2 | `-eddy -rpe_none -pe_dir j-` only (no reverse-PE) | `input/*_28.nii,input/*_30.nii` (native comma-list) |
-| `scripts/run_tortoise_eddy.sh` | TORTOISE V4 | `-c quadratic --epi off` only | `output/concat/dwi_concat.nii` |
-| `scripts/run_designer_eddy_sdc.sh` | DESIGNER v2 (GPU) | `-eddy -rpe_pair <PA> -pe_dir j-` (SDC) | `input/*_28.nii,input/*_30.nii,input/*_38.nii` |
-| `scripts/run_tortoise_eddy_sdc.sh` | TORTOISE V4 (GPU, `TORTOISEProcess_cuda`) | `-c quadratic --epi DRBUDDI -d <PA>` (SDC) | `output/concat/dwi_concat.nii` + `input/*_38.nii` |
-| `scripts/run_designer_full.sh` | DESIGNER v2 (GPU) | `-denoise -degibbs -eddy -rpe_pair <PA>` (full pipeline, one invocation) | `input/*_28.nii,input/*_30.nii,input/*_38.nii` |
-| `scripts/run_tortoise_full.sh` | TORTOISE V4 (GPU, `TORTOISEProcess_cuda`) | `--denoising for_final --gibbs 1 -c quadratic --epi DRBUDDI -d <PA>` (full pipeline, one invocation) | `output/concat/dwi_concat.nii` + `input/*_38.nii` |
+| Script | What it does | Example |
+|---|---|---|
+| `scripts/concatenate_inputs.sh` | Host MRtrix3 `dwicat`-merges series 28+30 into `output/concat/dwi_concat.*` (TORTOISE only; no args) | `./scripts/concatenate_inputs.sh` |
+| `scripts/extract_brain_mask.sh` | Host FSL: mean b0 (bval ≤ 50) → `bet -f 0.2` → `output/brain_mask/brain_mask.nii.gz` (no args) | `./scripts/extract_brain_mask.sh` |
+| `scripts/run_designer_denoise.sh` | DESIGNER `-denoise` (MP-PCA) only, then `run_tmi.sh` | `./scripts/run_designer_denoise.sh [output_dir]` (default `output/designer_denoise`) |
+| `scripts/run_designer_degibbs.sh` | DESIGNER `-degibbs -pf 0.75 -pe_dir j-` only | `./scripts/run_designer_degibbs.sh` |
+| `scripts/run_designer_eddy.sh` | DESIGNER `-eddy -rpe_none -pe_dir j-` only (no SDC) | `./scripts/run_designer_eddy.sh` |
+| `scripts/run_designer_eddy_sdc.sh` | DESIGNER `-eddy -rpe_pair <PA> -pe_dir j-` (GPU, SDC) | `./scripts/run_designer_eddy_sdc.sh` |
+| `scripts/run_designer_full.sh` | DESIGNER `-denoise -degibbs -eddy -rpe_pair <PA>`, one call (GPU) | `./scripts/run_designer_full.sh` |
+| `scripts/run_tortoise_denoise.sh` | TORTOISE `--denoising for_final` only (needs `dwi_concat.nii`) | `./scripts/run_tortoise_denoise.sh` |
+| `scripts/run_tortoise_degibbs.sh` | TORTOISE `--gibbs 1` only | `./scripts/run_tortoise_degibbs.sh` |
+| `scripts/run_tortoise_eddy.sh` | TORTOISE `-c quadratic --epi off` only (no SDC) | `./scripts/run_tortoise_eddy.sh` |
+| `scripts/run_tortoise_eddy_sdc.sh` | TORTOISE `-c quadratic --epi DRBUDDI --down_data <PA>` (GPU, `TORTOISEProcess_cuda`) | `./scripts/run_tortoise_eddy_sdc.sh` |
+| `scripts/run_tortoise_full.sh` | TORTOISE `--denoising for_final --gibbs 1 -c quadratic --epi DRBUDDI`, one call (GPU) | `./scripts/run_tortoise_full.sh` |
+| `scripts/run_tmi.sh` | Fits DKI/WDKI maps (`-DKI -WDKI`) on any preprocessed DWI, using the brain mask | `./scripts/run_tmi.sh output/designer_denoise/dwi_denoised.nii` |
+| `scripts/compare_dwi_volumes.py` | Compares 4 individual mean-b0-normalized DWI volumes between two 4D images, inside the brain mask | `python scripts/compare_dwi_volumes.py designer.nii.gz tortoise.nii.gz --volumes 3 7 25 60 --label "denoising volumes"` |
+| `scripts/compare_maps.py` | Voxel-wise absolute + relative diff of FA/MD/MW between two `tmi` `params/` dirs | `python scripts/compare_maps.py output/designer_denoise/params output/tortoise_denoise/params --label "denoising maps"` |
+| `scripts/compare_maps_roi.py` | Per-ROI mean FA/MD/MW scatter + Lin's CCC, using a segmentation volume (default `output/samseg/seg2dwi.nii.gz` — **not generated by any script here**, must be supplied externally) | `python scripts/compare_maps_roi.py output/designer_denoise/params output/tortoise_denoise/params --label "ROI means"` |
+| `scripts/roi_outliers.py` | Flags ROIs from a `compare_maps_roi.py` CSV where designer/tortoise means differ by ≥ threshold %, with FreeSurfer ROI names | `module load freesurfer && python scripts/roi_outliers.py results/.../roi_means.csv --threshold 10.0 --output results/roi_outliers.csv` |
 
-Run `scripts/concatenate_inputs.sh` before any `run_tortoise_*.sh` script — TORTOISE's
-`--up_data` accepts exactly one NIfTI file, unlike DESIGNER's native
-comma-separated multi-series input, so the two shells must be pre-merged for
-TORTOISE only. See the header comment in each script for the full reasoning.
-
-**Design choices confirmed with the user:**
-- DESIGNER consumes the two original per-shell files directly (its own documented
-  multi-series mechanism) rather than the `dwicat`-harmonized file, so TORTOISE's
-  intensity-scaling correction doesn't leak into the DESIGNER arm.
-- The denoise-only and degibbs-only scripts per tool each start independently from
-  the same input (not chained), so each algorithm is isolated for comparison.
-- Phase (`_ph`) series are excluded from this comparison entirely. The reverse-PE
-  pair (`_38`) is used, but only by the `*_eddy_sdc.sh` scripts, for SDC.
-- `run_designer_eddy.sh` / `run_tortoise_eddy.sh` intentionally do not use
-  reverse-PE data: eddy-current/motion correction and EPI/susceptibility
-  (topup) correction are independent steps in both tools — confirmed directly
-  against each pinned image's own `--help` output. DESIGNER's `-rpe_none`
-  performs "eddy current and motion correction only" with no reverse-PE
-  input; TORTOISE's `-c` (motion & eddy-currents) and `--epi` (susceptibility
-  correction) are separate flags with no dependency between them.
-- `run_designer_eddy_sdc.sh` / `run_tortoise_eddy_sdc.sh` add SDC using the
-  reverse-PE pair (series `_38`), with GPU for both tools (`--gpus all`, and
-  `TORTOISEProcess_cuda` for TORTOISE, which — unlike FSL `eddy` — does not
-  auto-detect GPU and requires the CUDA-suffixed binary explicitly). The
-  structural (MPRAGE) image is intentionally not passed to TORTOISE's DR-BUDDI
-  (`-s/--structural`), to keep parity with every other script's DWI-only input
-  convention. DESIGNER's `-rpe_pair` internally chains FSL `topup`'s output
-  into FSL `eddy` (`--topup=<prefix>`) within one `designer` call, matching
-  FSL's own topup→eddy workflow; TORTOISE's own fixed pipeline order instead
-  runs motion+eddy correction *before* DR-BUDDI SDC — an intentional, accepted
-  difference in each tool's native architecture, not a bug (see the header
-  comment in `run_tortoise_eddy_sdc.sh` for the full reasoning).
-- `run_designer_full.sh` / `run_tortoise_full.sh` run the complete pipeline
-  (denoise + degibbs + eddy/motion + SDC) end-to-end, as a single combined
-  invocation per tool (`designer -denoise -degibbs -eddy -rpe_pair <PA>` /
-  one `TORTOISEProcess_cuda` call with all steps enabled). DESIGNER's `-normalize`
-  flag (per-series b0 intensity matching, meant for scanner-gain drift across separate input series)
-  was not used since the series 28 and 30's intensity scales already match/.
+All `compare_*.py` scripts write into a timestamped subfolder of `results/`
+(override with `--output-dir`); see each script's docstring for the full
+argument list.

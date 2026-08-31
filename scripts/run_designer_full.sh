@@ -55,7 +55,7 @@
 # lightweight but eddy's CUDA path needs the GPU visible to the container).
 #
 # End-to-end: after producing (or finding an existing) dwi_full.nii, this
-# script chains into run_tmi.sh to fit DTI/DKI parameter maps.
+# script chains into run_tmi.sh to fit DKI/WDKI parameter maps.
 #
 # Usage (from the project root)
 # -----

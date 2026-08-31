@@ -26,7 +26,7 @@
 # being asked): eurotomania/tortoise:latest
 #
 # End-to-end: after producing (or finding an existing) dwi_denoised.nii, this
-# script chains into run_tmi.sh to fit DTI/DKI parameter maps -- so a single
+# script chains into run_tmi.sh to fit DKI/WDKI parameter maps -- so a single
 # invocation goes from raw input through preprocessing to parametric maps.
 #
 # Usage (from the project root)

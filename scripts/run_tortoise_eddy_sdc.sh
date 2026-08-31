@@ -62,7 +62,7 @@
 # selection). Both are required together; neither alone is sufficient.
 #
 # End-to-end: after producing (or finding an existing) dwi_eddy_sdc.nii,
-# this script chains into run_tmi.sh to fit DTI/DKI parameter maps.
+# this script chains into run_tmi.sh to fit DKI/WDKI parameter maps.
 #
 # Usage (from the project root)
 # -----

@@ -2,8 +2,8 @@
 #
 # run_tmi.sh
 #
-# Fits DTI (md, ad, rd, fa, eigenvalues/eigenvectors) and DKI (mk, ak, rk)
-# parameter maps on a preprocessed DWI (a DESIGNER or TORTOISE pipeline
+# Fits DKI (fa, md, ad, rd, eigenvalues/eigenvectors, mk, ak, rk) and WDKI
+# (mw) parameter maps on a preprocessed DWI (a DESIGNER or TORTOISE pipeline
 # output) using `tmi`, NYU's DESIGNER-v2 companion fitting tool.
 #
 # `tmi` is bundled inside the same Docker image as `designer` (confirmed via
@@ -20,12 +20,12 @@
 #   ./scripts/run_tmi.sh output/tortoise_degibbs/dwi_degibbs.nii
 #
 # Output: params/ created next to the input DWI (e.g.
-# output/designer_denoise/params/), containing tmi's DTI + DKI maps.
+# output/designer_denoise/params/), containing tmi's DKI + WDKI maps.
 #
 # Flags used:
 #   -DKI -WDKI     tensor fitting only -- no -SMI, no -DTI (per user's
 #                 request: SMI excluded entirely).
-#   -mask         output/brain_mask_original/brain_mask.nii.gz (from
+#   -mask         output/brain_mask/brain_mask.nii.gz (from
 #                 extract_brain_mask.sh).
 #   -fslbval/-fslbvec
 #                 explicitly point at the input's gradient-table sidecars.
@@ -44,7 +44,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DESIGNER_IMAGE="nyudiffusionmri/designer2:v2.0.16"
-BRAIN_MASK="${PROJECT_ROOT}/output/brain_mask_original/brain_mask.nii.gz"
+BRAIN_MASK="${PROJECT_ROOT}/output/brain_mask/brain_mask.nii.gz"
 
 # input/ and output/ may be symlinks to a network mount (e.g. CIFS). Docker's
 # bind mount below does not follow host symlinks out of PROJECT_ROOT, so the
